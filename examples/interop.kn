@@ -1,0 +1,16 @@
+-- interop.kn — Ecosystem interop
+-- Demonstrates importing from pip, npm, cargo, and system libs.
+
+-- Python ecosystem
+from pip numpy as np
+
+arr  = np.array([1, 2, 3])
+doubled = arr * 2
+
+-- File I/O with stdlib
+content = fs.read("data.json")?
+log.info("Read " + str(len(content)) + " bytes")
+
+-- Environment variables
+port = env.get("PORT", "8080")
+log.info("Starting on port " + port)

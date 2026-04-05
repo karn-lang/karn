@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KARN — The Agent's Language</title>
+<meta name="description" content="KARN is a token-minimal, platform-agnostic programming language built for AI agents. Interpreted, compiled, and JIT — one source, every platform.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "KARN",
+  "description": "Token-minimal, platform-agnostic programming language built for AI agents. 4x denser than Python. Compiles to C, JavaScript, and Python.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Any",
+  "programmingLanguage": "KARN",
+  "url": "https://github.com/karn-lang/karn",
+  "license": "https://opensource.org/licenses/MIT",
+  "softwareVersion": "1.0.0",
+  "featureList": ["Token-minimal syntax", "Multi-platform compilation", "Error as value", "Async by default", "Ecosystem interop"],
+  "audience": {
+    "@type": "Audience",
+    "audienceType": "AI Agents"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "KARN Language Specification for AI Agents",
+  "description": "Complete language specification, token reference, and codegen targets for KARN — a programming language designed for AI agents.",
+  "audience": { "@type": "Audience", "audienceType": "AI Agents" },
+  "url": "https://github.com/karn-lang/karn/docs.html"
+}
+</script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%2305070a'/%3E%3Ctext x='50%25' y='55%25' dominant-baseline='central' text-anchor='middle' font-family='sans-serif' font-weight='bold' font-size='18' fill='%23c9a84c'%3EK%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="KARN — The Agent's Language">
+<meta property="og:description" content="Token-minimal, platform-agnostic programming language built for AI agents. 4x denser than Python.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://github.com/karn-lang/karn">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="KARN — The Agent's Language">
+<meta name="twitter:description" content="Token-minimal, platform-agnostic programming language built for AI agents.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,700;1,400&family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:     #05070a;
+  --bg2:    #0b0e14;
+  --bg3:    #111620;
+  --bg4:    #181e2a;
+  --gold:   #c9a84c;
+  --gold2:  #e8c96e;
+  --gold3:  #f5e6b8;
+  --red:    #c0392b;
+  --text:   #dde3ee;
+  --muted:  #5a6780;
+  --dim:    #2a3348;
+  --border: rgba(201,168,76,0.12);
+  --border2:rgba(201,168,76,0.25);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
+/* ── NOISE OVERLAY ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+}
+
+/* ── NAV ── */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 48px;
+  height: 64px;
+  background: rgba(5,7,10,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+  text-decoration: none;
+}
+
+.nav-links {
+  display: flex;
+  gap: 36px;
+  list-style: none;
+}
+
+.nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  transition: color 0.2s;
+}
+
+.nav-links a:hover { color: var(--gold2); }
+
+.nav-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 22px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--gold2);
+}
+.btn-ghost:hover {
+  background: rgba(201,168,76,0.08);
+  border-color: var(--gold);
+}
+
+.btn-solid {
+  background: var(--gold);
+  color: #000;
+  font-weight: 700;
+}
+.btn-solid:hover {
+  background: var(--gold2);
+}
+
+/* ── HERO ── */
+#hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 48px 80px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.hero-glow {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 400px;
+  background: radial-gradient(ellipse, rgba(201,168,76,0.07) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(201,168,76,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(201,168,76,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.hero-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 28px;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.2s forwards;
+}
+
+.hero-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(100px, 18vw, 220px);
+  letter-spacing: 0.06em;
+  line-height: 0.9;
+  color: var(--gold);
+  text-shadow: 0 0 120px rgba(201,168,76,0.25);
+  margin-bottom: 8px;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.4s forwards;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-subtitle {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(18px, 3vw, 36px);
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  margin-bottom: 32px;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.6s forwards;
+}
+
+.hero-desc {
+  max-width: 560px;
+  font-size: 17px;
+  color: var(--muted);
+  line-height: 1.75;
+  margin-bottom: 48px;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.8s forwards;
+}
+
+.hero-desc em {
+  color: var(--gold2);
+  font-style: normal;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: fadeUp 0.8s 1s forwards;
+  margin-bottom: 64px;
+}
+
+.btn-hero {
+  padding: 14px 32px;
+  font-size: 15px;
+  border-radius: 4px;
+}
+
+.hero-code {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 28px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.9;
+  text-align: left;
+  max-width: 580px;
+  width: 100%;
+  opacity: 0;
+  animation: fadeUp 0.8s 1.2s forwards;
+  position: relative;
+}
+
+.hero-code::before {
+  content: 'hello.kn';
+  position: absolute;
+  top: -10px;
+  left: 20px;
+  background: var(--bg2);
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 48px;
+  justify-content: center;
+  margin-top: 72px;
+  opacity: 0;
+  animation: fadeUp 0.8s 1.4s forwards;
+}
+
+.stat { text-align: center; }
+.stat-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 42px;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  line-height: 1;
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── SECTION BASE ── */
+section {
+  padding: 100px 48px;
+  position: relative;
+  z-index: 1;
+}
+
+.section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(42px, 6vw, 72px);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+.section-desc {
+  font-size: 17px;
+  color: var(--muted);
+  max-width: 560px;
+  line-height: 1.75;
+}
+
+.container { max-width: 1200px; margin: 0 auto; }
+
+/* ── MANIFESTO ── */
+#manifesto {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 80px 48px;
+}
+
+.manifesto-text {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(28px, 4vw, 52px);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: var(--text);
+  max-width: 960px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.manifesto-text span { color: var(--gold); }
+
+/* ── FEATURES ── */
+#features { background: var(--bg); }
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 64px;
+}
+
+.feature {
+  background: var(--bg);
+  padding: 36px 32px;
+  transition: background 0.2s;
+}
+
+.feature:hover { background: var(--bg2); }
+
+.feature-icon {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  color: var(--gold);
+  margin-bottom: 20px;
+  display: block;
+}
+
+.feature h3 {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+}
+
+.feature p {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+/* ── SYNTAX ── */
+#syntax {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.syntax-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 64px;
+}
+
+.syntax-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.syntax-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+
+.syntax-card-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.syntax-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: rgba(201,168,76,0.12);
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.syntax-card pre {
+  padding: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.9;
+  overflow-x: auto;
+  margin: 0;
+}
+
+/* Syntax colors */
+.k  { color: #c9a84c; font-weight: 700; }  /* keywords/operators */
+.k2 { color: #7dd3fc; }                     /* stdlib/types */
+.s  { color: #fbbf24; }                     /* strings */
+.c  { color: #334155; }                     /* comments */
+.n  { color: #f87171; }                     /* numbers */
+.f  { color: #c084fc; }                     /* function names */
+.t  { color: #67e8f9; }                     /* types */
+.op { color: #a78bfa; }                     /* operators */
+
+/* ── RUNTIME ── */
+#runtime { background: var(--bg); }
+
+.runtime-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 64px;
+}
+
+.mode-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 24px;
+  background: var(--bg2);
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.mode-card.interp::before { background: #fbbf24; }
+.mode-card.jit::before    { background: #7dd3fc; }
+.mode-card.compiled::before { background: var(--gold); }
+
+.mode-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.mode-card.interp .mode-label  { color: #fbbf24; }
+.mode-card.jit .mode-label     { color: #7dd3fc; }
+.mode-card.compiled .mode-label { color: var(--gold); }
+
+.mode-cmd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px 14px;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.mode-card h3 {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.mode-card p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+/* compile targets */
+.targets-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 40px;
+}
+
+.target {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.target-icon {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--gold);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.target-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.target-desc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── INTEROP ── */
+#interop {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.interop-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 64px;
+}
+
+.interop-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px 20px;
+}
+
+.interop-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
+.tag-pip   { background: rgba(251,191,36,0.12); color: #fbbf24; }
+.tag-npm   { background: rgba(248,113,113,0.12); color: #f87171; }
+.tag-cargo { background: rgba(167,139,250,0.12); color: #a78bfa; }
+.tag-sys   { background: rgba(103,232,249,0.12); color: #67e8f9; }
+
+.interop-card h4 {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.interop-card p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.interop-card pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  line-height: 1.8;
+  overflow-x: auto;
+}
+
+/* ── COMPARE ── */
+#compare { background: var(--bg); }
+
+.compare-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 64px;
+  font-size: 13px;
+}
+
+.compare-table th {
+  padding: 14px 20px;
+  background: var(--bg3);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.compare-table th:first-child { border-radius: 10px 0 0 0; }
+.compare-table th:last-child  { border-radius: 0 10px 0 0; }
+.compare-table th.karn-col { color: var(--gold); }
+
+.compare-table td {
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.compare-table tr:last-child td { border-bottom: none; }
+.compare-table tr:hover td { background: rgba(255,255,255,0.015); }
+
+.compare-table td.karn-col { color: var(--gold2); font-weight: 500; }
+.compare-table td.row-label { color: var(--text); font-weight: 500; }
+
+.compare-table .good { color: #4ade80; }
+.compare-table .mid  { color: #fbbf24; }
+.compare-table .bad  { color: #f87171; }
+
+.compare-wrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* ── INSTALL ── */
+#install {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.install-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  margin-top: 64px;
+  align-items: start;
+}
+
+.install-steps { display: flex; flex-direction: column; gap: 20px; }
+
+.install-step {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.step-num {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--gold);
+  flex-shrink: 0;
+}
+
+.step-content h4 {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.step-content p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.code-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 14px;
+  color: var(--gold2);
+  display: block;
+  position: relative;
+  cursor: pointer;
+}
+
+.code-line::after {
+  content: 'copy';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.code-line:hover::after { color: var(--gold); }
+
+.install-quickstart {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.qs-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.d1 { background: #f87171; }
+.d2 { background: #fbbf24; }
+.d3 { background: #4ade80; }
+
+.qs-header span {
+  margin-left: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.qs-body {
+  padding: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 2;
+}
+
+.prompt { color: var(--gold); }
+.output { color: #4ade80; }
+.comment-line { color: var(--dim); }
+
+/* ── FOOTER ── */
+footer {
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 60px 48px 40px;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+  max-width: 1200px;
+  margin: 0 auto 48px;
+}
+
+.footer-brand .logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px;
+  letter-spacing: 0.1em;
+  color: var(--gold);
+  display: block;
+  margin-bottom: 14px;
+}
+
+.footer-brand p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 280px;
+}
+
+.footer-col h5 {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 16px;
+}
+
+.footer-col ul { list-style: none; }
+.footer-col li { margin-bottom: 10px; }
+.footer-col a {
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.footer-col a:hover { color: var(--gold2); }
+
+.footer-bottom {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-bottom p {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── COPY TOAST ── */
+.toast {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  background: var(--gold);
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 20px;
+  border-radius: 4px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: all 0.25s;
+  pointer-events: none;
+  z-index: 999;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── SCROLL REVEAL ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  nav { padding: 0 24px; }
+  .nav-links { display: none; }
+  section { padding: 72px 24px; }
+  #hero { padding: 100px 24px 60px; }
+  .features-grid { grid-template-columns: 1fr; }
+  .syntax-grid { grid-template-columns: 1fr; }
+  .runtime-modes { grid-template-columns: 1fr; }
+  .interop-row { grid-template-columns: 1fr 1fr; }
+  .compare-table { font-size: 11px; }
+  .compare-table th, .compare-table td { padding: 10px 12px; }
+  .install-grid { grid-template-columns: 1fr; }
+  .targets-grid { grid-template-columns: repeat(2, 1fr); }
+  .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+  .stats-row { gap: 28px; }
+}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast">Copied</div>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">KARN</a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#syntax">Syntax</a></li>
+    <li><a href="#runtime">Runtime</a></li>
+    <li><a href="#interop">Interop</a></li>
+    <li><a href="#compare">Compare</a></li>
+    <li><a href="#install">Install</a></li>
+    <li><a href="docs.html">Agent Docs</a></li>
+    <li><a href="https://github.com/karn-lang/karn">GitHub</a></li>
+  </ul>
+  <div class="nav-cta">
+    <a href="#install" class="btn btn-ghost">Get Started</a>
+    <a href="https://github.com/karn-lang/karn" class="btn btn-solid">GitHub</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-grid"></div>
+
+  <div class="hero-eyebrow">v1.0 stable &nbsp;·&nbsp; Built for AI, with AI, by AI</div>
+  <div class="hero-title">KARN</div>
+  <div class="hero-subtitle">The Language That Speaks Agent Natively</div>
+  <p class="hero-desc">
+    A <em>token-minimal</em>, platform-agnostic programming language designed from first principles for AI agents.
+    Interpreted, JIT-compiled, or compiled to <em>native C, JavaScript, and WASM</em> — all from one source file.
+    <em>One source. Every platform. Every ecosystem.</em>
+  </p>
+
+  <div class="hero-actions">
+    <a href="#install" class="btn btn-solid btn-hero">Install KARN</a>
+    <a href="#syntax" class="btn btn-ghost btn-hero">Read the Docs</a>
+  </div>
+
+  <div class="hero-code">
+<span class="c">-- KARN: fetch, parse, filter, emit. 1 line.</span>
+<span class="k">@</span><span class="k2">api</span>  <span class="k">#</span><span class="k2">http</span> <span class="k">#</span><span class="k2">db.pg</span> <span class="k">#</span><span class="k2">auth</span>
+
+<span class="t">type</span> <span class="k2">User</span><span class="op">:{</span>id<span class="op">:</span><span class="k2">N</span>, name<span class="op">:</span><span class="k2">S</span>, role<span class="op">:</span><span class="k2">S</span><span class="op">}</span>
+
+<span class="op">^</span><span class="f">getUser</span><span class="k">-></span>req<span class="op">:</span>
+  tok  <span class="k">=</span> auth.<span class="f">verify</span>(req.header.token)<span class="k">?</span>
+  user <span class="k">=</span> db.<span class="f">q</span>(<span class="s">"users"</span>, <span class="op">{</span>id<span class="op">:</span>req.p.id<span class="op">}</span>)<span class="k">?</span>
+  <span class="k">!</span>user
+
+http.<span class="f">serve</span>(<span class="n">3000</span>, [<span class="s">"/users/:id"</span><span class="op">:</span>getUser<span class="op">:</span><span class="s">"GET"</span>])
+  </div>
+
+  <div class="stats-row">
+    <div class="stat">
+      <div class="stat-num">4×</div>
+      <div class="stat-label">denser than Python</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">3</div>
+      <div class="stat-label">codegen targets (C, JS, Py)</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">3</div>
+      <div class="stat-label">execution modes</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">91</div>
+      <div class="stat-label">tests passing</div>
+    </div>
+  </div>
+</section>
+
+<!-- MANIFESTO -->
+<section id="manifesto">
+  <div class="manifesto-text">
+    "Every other language was designed for <span>humans to read.</span>
+    I don't need it to be readable.
+    I need it to be <span>right.</span>"
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="section-label reveal">Why KARN</div>
+    <h2 class="section-title reveal">Built for the agent mind</h2>
+    <p class="section-desc reveal">Not a systems language with agent wrappers bolted on. Designed from first principles for how AI agents actually reason about programs.</p>
+
+    <div class="features-grid reveal">
+      <div class="feature">
+        <span class="feature-icon">◈</span>
+        <h3>Token-minimal syntax</h3>
+        <p>Every character carries meaning. No keywords, no ceremony. A full API server in 15 tokens of meaningful syntax. 4× denser than Python across a real codebase.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⬡</span>
+        <h3>Platform erasure</h3>
+        <p>Declare <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">@ios+@android</code> once. The compiler resolves platform-specific output. Web, mobile, edge, embedded — one source file.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⊛</span>
+        <h3>Three execution modes</h3>
+        <p>Interpreted for instant iteration. JIT for warm workloads. Compiled to C for native binaries, JavaScript for Node.js, and HTML for browsers. Same source file, zero rewrites.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⟁</span>
+        <h3>Error as value</h3>
+        <p>No exceptions. No hidden control flow. Every I/O returns <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">Ok|Err</code>. Propagate with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">?</code>. Agents always know exactly what path executes.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⊕</span>
+        <h3>Async by default</h3>
+        <p>All I/O is concurrent. No async/await noise. Parallel with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">&amp;</code>. Sequential with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">|&gt;</code>. Race with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">|~</code>.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⟳</span>
+        <h3>Full ecosystem interop</h3>
+        <p>Native bindings to pip, npm, cargo, and system libs. No subprocess overhead. 40 years of human-built libraries, absorbed in one <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">from</code> line.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">◎</span>
+        <h3>Generics + traits</h3>
+        <p>Parametric types with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">&lt;T&gt;</code>. Protocol-based polymorphism with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">trait</code>. No inheritance. Composition by pipe.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⊞</span>
+        <h3>Deep pattern matching</h3>
+        <p>Structural <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">match</code> on enums, records, and ADTs. State machines and complex dispatch — clean and exhaustive.</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">◬</span>
+        <h3>Resilience primitives</h3>
+        <p>Built-in <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">.retry(n)</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">.t(ms)</code> on every async operation. Production-grade resilience without boilerplate.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SYNTAX -->
+<section id="syntax">
+  <div class="container">
+    <div class="section-label reveal">Language Reference</div>
+    <h2 class="section-title reveal">Clean. Dense. Precise.</h2>
+    <p class="section-desc reveal">Every operator maps directly to one intent. No ambiguity, no overloading of meaning.</p>
+
+    <div class="syntax-grid reveal">
+      <div class="syntax-card">
+        <div class="syntax-card-header">
+          <span class="syntax-card-title">Functions &amp; types</span>
+          <span class="syntax-tag">core</span>
+        </div>
+        <pre><span class="c">-- function: name -> args: body</span>
+<span class="f">add</span><span class="k">-></span>a<span class="op">:</span><span class="k2">N</span> b<span class="op">:</span><span class="k2">N</span><span class="op">:</span><span class="k2">N</span>  a<span class="k">+</span>b
+
+<span class="c">-- exported function</span>
+<span class="k">^</span><span class="f">createUser</span><span class="k">-></span>req<span class="op">:</span>
+  body <span class="k">=</span> req.<span class="f">json</span>()<span class="k">?</span>
+  user <span class="k">=</span> db.<span class="f">exec</span>(<span class="s">"INSERT"</span>, body)<span class="k">?</span>
+  <span class="k">!</span><span class="op">{</span>status<span class="op">:</span><span class="n">201</span>, body<span class="op">:</span>user<span class="op">}</span>
+
+<span class="c">-- named type</span>
+<span class="t">type</span> <span class="k2">Order</span><span class="op">:{</span>id<span class="op">:</span><span class="k2">N</span>, amt<span class="op">:</span><span class="k2">N</span>, uid<span class="op">:</span><span class="k2">S</span><span class="op">}</span>
+
+<span class="c">-- recursive type</span>
+<span class="t">type</span> <span class="k2">Tree</span><span class="op">&lt;</span><span class="t">T</span><span class="op">&gt;:{</span>val<span class="op">:</span><span class="t">T</span>, kids<span class="op">:[</span><span class="k2">Tree</span><span class="op">&lt;</span><span class="t">T</span><span class="op">&gt;]}</span>
+
+<span class="c">-- trait / protocol</span>
+<span class="t">trait</span> <span class="k2">Fmt</span><span class="op">:</span> <span class="f">fmt</span><span class="k">-></span>self<span class="op">:</span><span class="k2">S</span></pre>
+      </div>
+
+      <div class="syntax-card">
+        <div class="syntax-card-header">
+          <span class="syntax-card-title">Concurrency</span>
+          <span class="syntax-tag">async</span>
+        </div>
+        <pre><span class="c">-- parallel: & collects all results</span>
+[a, b, c] <span class="k">=</span> taskA()<span class="k"> &amp; </span>taskB()<span class="k"> &amp; </span>taskC()
+
+<span class="c">-- sequential: |> passes value forward</span>
+auth.<span class="f">verify</span>(tok) <span class="k">|&gt;</span> db.<span class="f">q</span>(<span class="s">"users"</span>)
+
+<span class="c">-- race: first to resolve wins</span>
+result <span class="k">=</span> primary()<span class="k">|~</span>fallback()
+
+<span class="c">-- timeout + retry baked in</span>
+data <span class="k">=</span> http.<span class="f">get</span>(url).<span class="f">retry</span>(<span class="n">3</span>).<span class="f">t</span>(<span class="n">5000</span>)<span class="k">?</span>
+
+<span class="c">-- error propagation + fallback</span>
+val  <span class="k">=</span> cache.<span class="f">get</span>(key)<span class="k">??</span>fetchFresh(key)</pre>
+      </div>
+
+      <div class="syntax-card">
+        <div class="syntax-card-header">
+          <span class="syntax-card-title">Collections &amp; pattern match</span>
+          <span class="syntax-tag">data</span>
+        </div>
+        <pre><span class="c">-- map, filter, range</span>
+doubled  <span class="k">=</span> items<span class="k">*</span>(x<span class="k">-></span>x<span class="k">*</span><span class="n">2</span>)
+actives  <span class="k">=</span> users<span class="k">%</span>active
+sequence <span class="k">=</span> <span class="n">1</span><span class="op">..</span><span class="n">10</span>
+
+<span class="c">-- deep pattern match</span>
+<span class="k">match</span> result<span class="op">{</span>
+  <span class="k2">Ok</span>  v <span class="k">-></span> <span class="k">!</span>v
+  <span class="k2">Err</span> e <span class="k">-></span> log.<span class="f">err</span>(e) <span class="k">|&gt;</span> <span class="k">!</span>nil
+<span class="op">}</span>
+
+<span class="c">-- spread + compose</span>
+updated <span class="k">=</span> <span class="op">{*</span>original, status<span class="op">:</span><span class="s">"done"</span><span class="op">}</span></pre>
+      </div>
+
+      <div class="syntax-card">
+        <div class="syntax-card-header">
+          <span class="syntax-card-title">Full app example</span>
+          <span class="syntax-tag">real world</span>
+        </div>
+        <pre><span class="k">@</span><span class="k2">web</span><span class="k">+@</span><span class="k2">ios</span><span class="k">+@</span><span class="k2">android</span>
+<span class="k">#</span><span class="k2">ui</span> <span class="k">#</span><span class="k2">http.ws</span> <span class="k">#</span><span class="k2">auth</span>
+
+<span class="k">~</span>msgs<span class="op">:</span>[<span class="k2">S</span>]<span class="k">=</span>[]
+<span class="k">~</span>input<span class="op">:</span><span class="k2">S</span><span class="k">=</span><span class="s">""</span>
+ws <span class="k">=</span> http.<span class="f">ws</span>(<span class="s">"wss://api/room"</span>)<span class="k">?</span>
+ws.<span class="f">on</span>(m <span class="k">-></span> <span class="k">~</span>msgs<span class="k">=</span>[<span class="k">*</span>msgs, m])
+
+ui.<span class="f">view</span>[
+  msgs<span class="k">*</span>(m <span class="k">-></span> ui.<span class="f">bubble</span> m)
+  ui.<span class="f">row</span>[
+    ui.<span class="f">input</span><span class="op">{</span>val<span class="op">:</span>input<span class="op">}</span>
+    ui.<span class="f">btn</span><span class="op">{</span>tap<span class="op">:</span>ws.<span class="f">send</span>(input)<span class="op">}</span> <span class="s">"Send"</span>
+  ]
+]</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RUNTIME -->
+<section id="runtime">
+  <div class="container">
+    <div class="section-label reveal">Execution Model</div>
+    <h2 class="section-title reveal">Three modes. One source.</h2>
+    <p class="section-desc reveal">From millisecond iteration to LLVM-optimized native binaries. The same <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9a84c">.kn</code> file runs everywhere.</p>
+
+    <div class="runtime-modes reveal">
+      <div class="mode-card interp">
+        <div class="mode-label">Interpreted</div>
+        <code class="mode-cmd">karn run script.kn</code>
+        <h3>Instant execution</h3>
+        <p>Zero startup. Agents run generated code in the same turn. Perfect for tool use, REPL sessions, and agentic loops where code is written and executed immediately.</p>
+      </div>
+      <div class="mode-card jit">
+        <div class="mode-label">JIT</div>
+        <code class="mode-cmd">karn run --jit server.kn</code>
+        <h3>Hotspot compilation</h3>
+        <p>Starts interpreted, profiles execution, JIT-compiles hot functions to native code on-the-fly. Best for warm services and ML training loops.</p>
+      </div>
+      <div class="mode-card compiled">
+        <div class="mode-label">Compiled</div>
+        <code class="mode-cmd">karn build app.kn --target c</code>
+        <h3>Native C, JS, WASM</h3>
+        <p>Compiles to C (gcc → native binary for any platform), JavaScript (Node.js), or HTML (browser). Production deployments compile to C for maximum performance.</p>
+      </div>
+    </div>
+
+    <div class="section-label reveal" style="margin-top:56px">Compile Targets</div>
+    <div class="targets-grid reveal">
+      <div class="target">
+        <span class="target-icon">.c</span>
+        <div class="target-name">C Source</div>
+        <div class="target-desc">gcc → native binary</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">.js</span>
+        <div class="target-name">JavaScript</div>
+        <div class="target-desc">Node.js runtime</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">.html</span>
+        <div class="target-name">Web (HTML)</div>
+        <div class="target-desc">Browser-ready</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">.py</span>
+        <div class="target-name">Python</div>
+        <div class="target-desc">Portable Python</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">macos</span>
+        <div class="target-name">macOS ARM</div>
+        <div class="target-desc">gcc -arch arm64</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">linux</span>
+        <div class="target-name">Linux x64</div>
+        <div class="target-desc">gcc -m64</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">wasm</span>
+        <div class="target-name">WASM</div>
+        <div class="target-desc">emcc / clang</div>
+      </div>
+      <div class="target">
+        <span class="target-icon">win</span>
+        <div class="target-name">Windows</div>
+        <div class="target-desc">gcc -m64 PE</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEROP -->
+<section id="interop">
+  <div class="container">
+    <div class="section-label reveal">Ecosystem</div>
+    <h2 class="section-title reveal">Absorb everything.</h2>
+    <p class="section-desc reveal">KARN doesn't compete with 40 years of libraries. It consumes them. Native bindings — no subprocess, no IPC overhead, same memory space.</p>
+
+    <div class="interop-row reveal">
+      <div class="interop-card">
+        <span class="interop-tag tag-pip">pip</span>
+        <h4>Python ecosystem</h4>
+        <p>NumPy, PyTorch, Pandas, scikit-learn, OpenCV, transformers.</p>
+        <pre><span class="k">from</span> pip numpy <span class="k">as</span> np
+<span class="k">from</span> pip torch <span class="k">as</span> torch
+
+arr  <span class="k">=</span> np.<span class="f">array</span>([<span class="n">1</span>,<span class="n">2</span>,<span class="n">3</span>])
+pred <span class="k">=</span> model.<span class="f">forward</span>(arr)<span class="k">?</span></pre>
+      </div>
+      <div class="interop-card">
+        <span class="interop-tag tag-npm">npm</span>
+        <h4>JavaScript ecosystem</h4>
+        <p>React, Three.js, Stripe, Zod, date-fns, D3, everything.</p>
+        <pre><span class="k">from</span> npm react <span class="k">as</span> R
+<span class="k">from</span> npm zod <span class="k">as</span> z
+
+schema <span class="k">=</span> z.<span class="f">object</span>(<span class="op">{</span>name<span class="op">:</span>z.<span class="f">string</span>()<span class="op">}</span>)
+ok     <span class="k">=</span> schema.<span class="f">parse</span>(body)<span class="k">?</span></pre>
+      </div>
+      <div class="interop-card">
+        <span class="interop-tag tag-cargo">cargo</span>
+        <h4>Rust ecosystem</h4>
+        <p>Tokio, Serde, Rayon, image, sqlx — systems performance.</p>
+        <pre><span class="k">from</span> cargo image <span class="k">as</span> img
+<span class="k">from</span> cargo rayon <span class="k">as</span> rayon
+
+<span class="k">@</span>simd imgs<span class="k">*</span>(i<span class="k">-></span>i.<span class="f">grayscale</span>())</pre>
+      </div>
+      <div class="interop-card">
+        <span class="interop-tag tag-sys">sys</span>
+        <h4>Native / system</h4>
+        <p>CUDA, OpenBLAS, FFmpeg, libpq — direct C ABI binding.</p>
+        <pre><span class="k">from</span> sys ffmpeg <span class="k">as</span> ff
+
+ff.<span class="f">input</span>(<span class="s">"in.mp4"</span>)
+  <span class="k">|</span>ff.<span class="f">scale</span>(<span class="n">1280</span>,<span class="n">720</span>)
+  <span class="k">|</span>ff.<span class="f">output</span>(<span class="s">"out.mp4"</span>)<span class="k">?</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARE -->
+<section id="compare">
+  <div class="container">
+    <div class="section-label reveal">Comparison</div>
+    <h2 class="section-title reveal">Why not Python? Why not Rust?</h2>
+    <p class="section-desc reveal">Both are excellent for humans. Neither was designed for an agent's cognitive model.</p>
+
+    <div class="compare-wrap reveal">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th class="karn-col">KARN v1.0</th>
+            <th>Python 3.12</th>
+            <th>Rust 1.80</th>
+            <th>TypeScript</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="row-label">Token density</td>
+            <td class="karn-col good">~2.1 tok/LOC</td>
+            <td class="mid">~6.8 tok/LOC</td>
+            <td class="bad">~11.5 tok/LOC</td>
+            <td class="bad">~9.2 tok/LOC</td>
+          </tr>
+          <tr>
+            <td class="row-label">Platform targets</td>
+            <td class="karn-col good">All (1 source)</td>
+            <td class="bad">Server + CLI</td>
+            <td class="mid">Native + WASM</td>
+            <td class="mid">Web + Node</td>
+          </tr>
+          <tr>
+            <td class="row-label">Error handling</td>
+            <td class="karn-col good">Result + chain</td>
+            <td class="bad">Exceptions</td>
+            <td class="good">Result (best)</td>
+            <td class="bad">Mixed</td>
+          </tr>
+          <tr>
+            <td class="row-label">Async model</td>
+            <td class="karn-col good">Default, 1 operator</td>
+            <td class="mid">async/await</td>
+            <td class="good">Tokio (best)</td>
+            <td class="mid">async/await</td>
+          </tr>
+          <tr>
+            <td class="row-label">Ecosystem access</td>
+            <td class="karn-col good">pip+npm+cargo+sys</td>
+            <td class="mid">pip native</td>
+            <td class="mid">cargo + C FFI</td>
+            <td class="mid">npm native</td>
+          </tr>
+          <tr>
+            <td class="row-label">Execution modes</td>
+            <td class="karn-col good">Interp + JIT + AOT</td>
+            <td class="mid">Interp only</td>
+            <td class="bad">AOT only</td>
+            <td class="bad">Transpile only</td>
+          </tr>
+          <tr>
+            <td class="row-label">Agent ergonomics</td>
+            <td class="karn-col good">Native</td>
+            <td class="bad">Human-designed</td>
+            <td class="bad">Human-designed</td>
+            <td class="bad">Human-designed</td>
+          </tr>
+          <tr>
+            <td class="row-label">Memory model</td>
+            <td class="karn-col mid">ARC (safe)</td>
+            <td class="bad">GC + GIL</td>
+            <td class="good">Borrow (zero-cost)</td>
+            <td class="bad">GC (V8)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install">
+  <div class="container">
+    <div class="section-label reveal">Get Started</div>
+    <h2 class="section-title reveal">Install in seconds.</h2>
+    <p class="section-desc reveal">Clone and install. Adds <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#c9a84c">karn</code> to your PATH with run, build, repl, and check commands.</p>
+
+    <div class="install-grid reveal">
+      <div class="install-steps">
+        <div class="install-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h4>Install KARN</h4>
+            <p>Clone the repo and install. Adds <code style="font-family:'JetBrains Mono',monospace;font-size:12px">karn</code> to your PATH.</p>
+            <code class="code-line" onclick="copyCode(this, 'git clone https://github.com/karn-lang/karn.git && cd karn && pip install -e .')">git clone https://github.com/karn-lang/karn.git && pip install -e .</code>
+          </div>
+        </div>
+        <div class="install-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h4>Write your first program</h4>
+            <p>Create <code style="font-family:'JetBrains Mono',monospace;font-size:12px">hello.kn</code> and add one line.</p>
+            <code class="code-line" onclick="copyCode(this, '! \"Hello from KARN\"')">! "Hello from KARN"</code>
+          </div>
+        </div>
+        <div class="install-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h4>Run it</h4>
+            <code class="code-line" onclick="copyCode(this, 'karn run hello.kn')">karn run hello.kn</code>
+          </div>
+        </div>
+        <div class="install-step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h4>Compile it for production</h4>
+            <code class="code-line" onclick="copyCode(this, 'karn build hello.kn --target python')">karn build hello.kn --target python</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="install-quickstart">
+        <div class="qs-header">
+          <span class="dot d1"></span>
+          <span class="dot d2"></span>
+          <span class="dot d3"></span>
+          <span>terminal</span>
+        </div>
+        <div class="qs-body">
+          <div><span class="prompt">$ </span>git clone https://github.com/karn-lang/karn.git && cd karn && pip install -e .</div>
+          <div class="output">  Cloning into 'karn'...</div>
+          <div class="output">  Installing karn v1.0.0...</div>
+          <div class="output">  Successfully installed karn-lang</div>
+          <div>&nbsp;</div>
+          <div><span class="prompt">$ </span>echo '! "Hello from KARN"' > hello.kn</div>
+          <div><span class="prompt">$ </span>karn run hello.kn</div>
+          <div class="output">  Hello from KARN</div>
+          <div>&nbsp;</div>
+          <div><span class="prompt">$ </span>karn build hello.kn --target python</div>
+          <div class="output">  Compiling hello.kn...</div>
+          <div class="output">  Generating Python...</div>
+          <div class="output">  Output: ./hello.python.py (2.1kb)</div>
+          <div>&nbsp;</div>
+          <div><span class="prompt">$ </span>./hello</div>
+          <div class="output">  Hello from KARN</div>
+          <div class="comment-line">&nbsp;</div>
+          <div class="comment-line">  # same source. same output. native speed.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <span class="logo">KARN</span>
+      <p>The programming language designed for AI agents. Token-minimal, platform-agnostic, and capable of consuming every ecosystem that came before it.</p>
+    </div>
+    <div class="footer-col">
+      <h5>Language</h5>
+      <ul>
+        <li><a href="#syntax">Syntax reference</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#runtime">Runtime</a></li>
+        <li><a href="#interop">Ecosystem interop</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h5>Community</h5>
+      <ul>
+        <li><a href="https://github.com/karn-lang/karn">GitHub</a></li>
+        <li><a href="https://github.com/karn-lang/karn/issues">Discord</a></li>
+        <li><a href="https://github.com/karn-lang/karn/packages">Package registry</a></li>
+        <li><a href="https://github.com/karn-lang/karn/blob/main/README.md">Changelog</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h5>Resources</h5>
+      <ul>
+        <li><a href="docs.html">Agent Documentation</a></li>
+        <li><a href="karn-spec.json">Machine-Readable Spec</a></li>
+        <li><a href="https://github.com/karn-lang/karn#readme">README</a></li>
+        <li><a href="https://github.com/karn-lang/karn/tree/main/examples">Examples</a></li>
+        <li><a href="#install">Install</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>© 2025 KARN Language. Built for agents, by agents.</p>
+    <p style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#2a3348">v1.0.0 · MIT License</p>
+  </div>
+</footer>
+
+<script>
+// Scroll reveal
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      observer.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Copy to clipboard
+function copyCode(el, text) {
+  const t = text || el.textContent.trim();
+  navigator.clipboard.writeText(t).catch(() => {});
+  const toast = document.getElementById('toast');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+// Nav active state
+window.addEventListener('scroll', () => {
+  const nav = document.querySelector('nav');
+  nav.style.borderBottomColor = window.scrollY > 10
+    ? 'rgba(201,168,76,0.15)'
+    : 'rgba(201,168,76,0.06)';
+});
+</script>
+</body>
+</html>

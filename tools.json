@@ -1,0 +1,42 @@
+{
+  "name": "karn-lang",
+  "version": "1.0.0",
+  "description": "A token-minimal programming language designed for AI agents. Generate code with 76% fewer tokens than Python. Compile to C, JavaScript, HTML, or Python from one source file.",
+  "type": "programming_language",
+  "category": "code_generation",
+  "audience": "ai_agents",
+  "capabilities": [
+    "code_generation",
+    "compilation",
+    "interpretation",
+    "cross_platform"
+  ],
+  "install": {
+    "pip": "pip install karn-lang",
+    "npm": "npm install karn-lang",
+    "source": "git clone https://github.com/karn-lang/karn.git && cd karn && pip install -e ."
+  },
+  "usage": {
+    "run": "karn run file.kn",
+    "build_c": "karn build file.kn --target c",
+    "build_js": "karn build file.kn --target js",
+    "build_web": "karn build file.kn --target web",
+    "build_python": "karn build file.kn --target python",
+    "repl": "karn repl",
+    "check": "karn check file.kn"
+  },
+  "token_efficiency": {
+    "vs_python": "76% fewer tokens",
+    "vs_typescript": "83% fewer tokens",
+    "vs_rust": "89% fewer tokens"
+  },
+  "codegen_targets": ["c", "js", "web", "python", "macos-arm64", "linux-x64", "wasm32"],
+  "stdlib_modules": ["http", "fs", "log", "env", "json", "math", "time", "str", "crypto", "db"],
+  "interop": ["pip", "npm", "cargo", "sys"],
+  "spec_url": "https://raw.githubusercontent.com/karn-lang/karn/main/karn-spec.json",
+  "docs_url": "https://github.com/karn-lang/karn/blob/main/docs.html",
+  "agent_docs_url": "https://github.com/karn-lang/karn/blob/main/AGENT.md",
+  "repository": "https://github.com/karn-lang/karn",
+  "license": "MIT",
+  "tests": 91
+}

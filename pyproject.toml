@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "karn-lang"
+version = "1.0.0"
+description = "KARN — The Agent's Language. Token-minimal, platform-agnostic programming language for AI agents. 4x denser than Python."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "KARN Language Contributors"},
+]
+maintainers = [
+    {name = "KARN Language Contributors"},
+]
+keywords = [
+    "ai-agents",
+    "agent-language",
+    "token-efficient",
+    "programming-language",
+    "compiler",
+    "interpreter",
+    "codegen",
+    "agent-tools",
+    "llm",
+    "code-generation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/karn-lang/karn"
+Documentation = "https://github.com/karn-lang/karn/blob/main/AGENT.md"
+Repository = "https://github.com/karn-lang/karn"
+Issues = "https://github.com/karn-lang/karn/issues"
+"Agent Docs" = "https://github.com/karn-lang/karn/blob/main/docs.html"
+"Machine Spec" = "https://raw.githubusercontent.com/karn-lang/karn/main/karn-spec.json"
+
+[project.scripts]
+karn = "files.karn:main"
+
+[tool.setuptools.packages.find]
+include = ["files*"]
+
+[tool.setuptools.package-data]
+files = ["*.py"]

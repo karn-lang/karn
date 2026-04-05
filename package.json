@@ -1,0 +1,35 @@
+{
+  "name": "karn-lang",
+  "version": "1.0.0",
+  "description": "KARN — The Agent's Language. Token-minimal, platform-agnostic programming language for AI agents. 4x denser than Python.",
+  "main": "karn.js",
+  "bin": {
+    "karn": "bin/karn"
+  },
+  "scripts": {
+    "test": "echo \"See python tests\"",
+    "start": "python3 files/karn.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karn-lang/karn.git"
+  },
+  "keywords": [
+    "ai-agents",
+    "agent-language",
+    "token-efficient",
+    "programming-language",
+    "compiler",
+    "interpreter",
+    "codegen",
+    "agent-tools",
+    "llm",
+    "code-generation"
+  ],
+  "author": "KARN Language Contributors",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/karn-lang/karn/issues"
+  },
+  "homepage": "https://github.com/karn-lang/karn#readme"
+}

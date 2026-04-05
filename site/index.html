@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Built with KARN</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:#05070a;color:#e8e6e3;
+    min-height:100vh;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    background-image:
+      radial-gradient(ellipse at 20% 50%,rgba(201,168,76,.06) 0%,transparent 50%),
+      radial-gradient(ellipse at 80% 50%,rgba(201,168,76,.04) 0%,transparent 50%);
+  }
+  .logo{font-size:72px;font-weight:800;letter-spacing:-2px;
+    background:linear-gradient(135deg,#c9a84c 0%,#f0d78c 50%,#c9a84c 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    margin-bottom:8px}
+  .tagline{font-size:20px;color:#888;margin-bottom:40px;font-weight:300}
+  .cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;max-width:800px}
+  .card{
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+    border-radius:12px;padding:24px;width:230px;text-align:center;
+    transition:border-color .3s}
+  .card:hover{border-color:rgba(201,168,76,.4)}
+  .card h3{color:#c9a84c;margin-bottom:8px;font-size:14px;text-transform:uppercase;letter-spacing:1px}
+  .card p{color:#999;font-size:13px;line-height:1.5}
+  .card .val{font-size:28px;font-weight:700;color:#e8e6e3;margin:8px 0}
+  .footer{margin-top:48px;color:#444;font-size:12px}
+  code{background:rgba(201,168,76,.1);padding:2px 8px;border-radius:4px;
+    font-family:'JetBrains Mono',monospace;font-size:13px;color:#c9a84c}
+</style>
+</head>
+<body>
+<div class="logo">KARN</div>
+<div class="tagline">The Agent's Language</div>
+<div class="cards">
+  <div class="card">
+    <h3>Version</h3>
+    <div class="val">1.0.0</div>
+    <p>Interpreted, JIT, and compiled. Same source file.</p>
+  </div>
+  <div class="card">
+    <h3>Syntax</h3>
+    <div class="val">4x</div>
+    <p>Denser than Python. Every character carries meaning.</p>
+  </div>
+  <div class="card">
+    <h3>Targets</h3>
+    <div class="val">12+</div>
+    <p>Python, JS, Linux, macOS, WASM, iOS, Android, and more.</p>
+  </div>
+  <div class="card">
+    <h3>Interop</h3>
+    <div class="val">4</div>
+    <p>pip, npm, cargo, and system libs. One <code>from</code> line.</p>
+  </div>
+</div>
+<div class="footer">This page was generated and served by a KARN program.</div>
+</body>
+</html>

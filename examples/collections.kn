@@ -1,0 +1,22 @@
+-- collections.kn — Collections and transformations
+-- Demonstrates map, filter, reduce, and pattern matching.
+
+items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+-- map: double each item
+doubled = items*(x -> x * 2)
+
+-- filter: keep evens
+evens = items%(x -> x % 2 == 0)
+
+-- chained operations
+result = items*(x -> x * 3)%(x -> x > 10)
+
+-- range
+one_to_hundred = 1..100
+
+-- pattern match on result type
+match Ok(42){
+  Ok(v)  -> !v
+  Err(e) -> !(-1)
+}

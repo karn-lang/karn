@@ -1,0 +1,17 @@
+-- async.kn — Concurrency patterns
+-- Demonstrates parallel, sequential, race, retry, timeout.
+
+-- Sequential pipe (passes result forward)
+auth.verify(tok) |> db.q("users") |> log.info
+
+-- Race (first success wins)
+result = http.get("https://primary.com")|~http.get("https://fallback.com")
+
+-- Retry with exponential backoff
+data = http.get("https://api.com/data").retry(3)?
+
+-- Timeout + retry combined
+response = http.get("https://slow.com").retry(2).t(5000)?
+
+-- Fallback on error
+cache.get(key)??fetchFresh(key)

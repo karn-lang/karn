@@ -1,0 +1,19 @@
+-- api-server.kn — Simple REST API
+-- Demonstrates types, HTTP, error handling, and interop.
+
+@web  #http #db.pg #auth
+
+type User:{id:N, name:S, role:S}
+
+^getUser->req:
+  tok  = auth.verify(req.header.token)?
+  user = db.q("users", {id:req.p.id})?
+  !user
+
+^createUser->req:
+  body = req.json()?
+  user = db.exec("INSERT", body.name, body.role)?
+  !{status:201, body:user}
+
+routes = {"/users/:id": getUser, "/users": createUser}
+http.serve(3000, routes)

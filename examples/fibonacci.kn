@@ -1,0 +1,11 @@
+-- fibonacci.kn — Recursive Fibonacci
+-- Demonstrates functions, recursion, and pattern matching.
+
+fib->n:N:N
+  match n{
+    0 -> 0
+    1 -> 1
+    x -> fib(x - 1) + fib(x - 2)
+  }
+
+! fib(10)

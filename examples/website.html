@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KARN App</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #05070a; color: #e8e6e3; padding: 2rem; }
+  #output { white-space: pre-wrap; font-family: monospace; color: #c9a84c; }
+</style>
+</head>
+<body>
+<div id="output"></div>
+<script>
+class _Ok {
+  constructor(v) { this.v = v; }
+  toString() { return `Ok(${JSON.stringify(this.v)})`; }
+}
+
+class _Err extends Error {
+  constructor(msg, ctx) { super(msg); this.ctx = ctx || []; }
+  toString() { return `Err(${this.message})`; }
+}
+
+function _prop(v) {
+  if (v instanceof _Err) throw v;
+  if (v instanceof _Ok) return v.v;
+  return v;
+}
+
+const http = {
+  async get(url, opts) {
+    try {
+      const r = await fetch(url, opts);
+      return new _Ok(await r.text());
+    } catch(e) { return new _Err(e.message); }
+  },
+  async post(url, body) {
+    return this.get(url, { method: "POST", body: JSON.stringify(body), headers: {"Content-Type":"application/json"} });
+  }
+};
+
+const fs = {
+  read(path) { return new _Err("fs.read not available in browser"); },
+  write(path, content) { try { localStorage.setItem(path, content); return new _Ok(null); } catch(e) { return new _Err(e.message); } },
+  list(path) { return new _Ok([]); }
+};
+
+const log = {
+  info: (...a) => { const m = a.map(x => typeof x==="object" ? JSON.stringify(x) : String(x)).join(" "); console.log(`%c[INFO]%c ${m}`, "color:#06b6d4", "color:#e8e6e3"); document.getElementById("output").textContent += `[INFO] ${m}\n`; return new _Ok(null); },
+  warn: (...a) => { const m = a.map(x => typeof x==="object" ? JSON.stringify(x) : String(x)).join(" "); console.warn(`[WARN] ${m}`); return new _Ok(null); },
+  err:  (...a) => { const m = a.map(x => typeof x==="object" ? JSON.stringify(x) : String(x)).join(" "); console.error(`[ERR] ${m}`); return new _Ok(null); }
+};
+
+const env = {
+  get: (k, d) => new _Ok(undefined),
+  require: (k) => new _Err(`env ${k} not set in browser`)
+};
+
+
+let title = "Built with KARN";
+let tagline = "The Agent's Language";
+let version = "1.0.0";
+let html = (((((("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>" + title) + "</title>\n<style>\n  *{margin:0;padding:0;box-sizing:border-box}\n  body{\n    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;\n    background:#05070a;color:#e8e6e3;\n    min-height:100vh;display:flex;flex-direction:column;\n    align-items:center;justify-content:center;\n    background-image:\n      radial-gradient(ellipse at 20% 50%,rgba(201,168,76,.06) 0%,transparent 50%),\n      radial-gradient(ellipse at 80% 50%,rgba(201,168,76,.04) 0%,transparent 50%);\n  }\n  .logo{font-size:72px;font-weight:800;letter-spacing:-2px;\n    background:linear-gradient(135deg,#c9a84c 0%,#f0d78c 50%,#c9a84c 100%);\n    -webkit-background-clip:text;-webkit-text-fill-color:transparent;\n    margin-bottom:8px}\n  .tagline{font-size:20px;color:#888;margin-bottom:40px;font-weight:300}\n  .cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;max-width:800px}\n  .card{\n    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);\n    border-radius:12px;padding:24px;width:230px;text-align:center;\n    transition:border-color .3s}\n  .card:hover{border-color:rgba(201,168,76,.4)}\n  .card h3{color:#c9a84c;margin-bottom:8px;font-size:14px;text-transform:uppercase;letter-spacing:1px}\n  .card p{color:#999;font-size:13px;line-height:1.5}\n  .card .val{font-size:28px;font-weight:700;color:#e8e6e3;margin:8px 0}\n  .footer{margin-top:48px;color:#444;font-size:12px}\n  code{background:rgba(201,168,76,.1);padding:2px 8px;border-radius:4px;\n    font-family:'JetBrains Mono',monospace;font-size:13px;color:#c9a84c}\n</style>\n</head>\n<body>\n<div class=\"logo\">KARN</div>\n<div class=\"tagline\">") + tagline) + "</div>\n<div class=\"cards\">\n  <div class=\"card\">\n    <h3>Version</h3>\n    <div class=\"val\">") + version) + "</div>\n    <p>Interpreted, JIT, and compiled. Same source file.</p>\n  </div>\n  <div class=\"card\">\n    <h3>Syntax</h3>\n    <div class=\"val\">4x</div>\n    <p>Denser than Python. Every character carries meaning.</p>\n  </div>\n  <div class=\"card\">\n    <h3>Targets</h3>\n    <div class=\"val\">12+</div>\n    <p>Python, JS, Linux, macOS, WASM, iOS, Android, and more.</p>\n  </div>\n  <div class=\"card\">\n    <h3>Interop</h3>\n    <div class=\"val\">4</div>\n    <p>pip, npm, cargo, and system libs. One <code>from</code> line.</p>\n  </div>\n</div>\n<div class=\"footer\">This page was generated and served by a KARN program.</div>\n</body>\n</html>");
+let result = fs.write("site/index.html", html);
+log.info("HTML written to site/index.html");
+console.log("Website built! Open site/index.html in your browser.");
+</script>
+</body>
+</html>
