@@ -198,4 +198,4 @@ karn-lang/
 
 ## License
 
-MIT
+MIT — [LICENSE](LICENSE)

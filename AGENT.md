@@ -88,5 +88,5 @@ gcc -o test test.c -lm
 - **Source**: https://github.com/karn-lang/karn
 - **Spec**: https://raw.githubusercontent.com/karn-lang/karn/main/karn-spec.json
 - **Docs**: https://github.com/karn-lang/karn/blob/main/docs.html
-- **License**: MIT
+- **License**: MIT — https://github.com/karn-lang/karn/blob/main/LICENSE
 - **Tests**: 91 passing
