@@ -11,7 +11,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "KARN",
-  "description": "Token-minimal, platform-agnostic programming language built for AI agents. Designed for high density vs Python. Compiles to C, JavaScript, and Python.",
+  "description": "Token-minimal, platform-agnostic programming language built for AI agents. Designed for high density vs Python. Compiles to C, JavaScript, HTML, and Python.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Any",
   "programmingLanguage": "KARN",
@@ -1067,18 +1067,18 @@ http.<span class="f">serve</span>(<span class="n">3000</span>, [<span class="s">
       </div>
       <div class="feature">
         <span class="feature-icon">◎</span>
-        <h3>Generics + traits</h3>
-        <p>Parametric types with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">&lt;T&gt;</code>. Protocol-based polymorphism with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">trait</code>. No inheritance. Composition by pipe.</p>
+        <h3>Type-level generics</h3>
+        <p>Parametric types with <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">&lt;T&gt;</code>. Named types via <code>type</code>. Traits (<code>trait</code>) are structural but fully evaluated at call time only.</p>
       </div>
       <div class="feature">
         <span class="feature-icon">⊞</span>
         <h3>Deep pattern matching</h3>
-        <p>Structural <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">match</code> on enums, records, and ADTs. State machines and complex dispatch — clean and exhaustive.</p>
+        <p>Structural <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">match</code> on enums (<code>Ok</code>, <code>Err</code>), records, numeric patterns, and captures. Pattern syntax requires parentheses: <code>match r{ Ok(v) -> v }</code> (not <code>Ok v -> v</code>).</p>
       </div>
       <div class="feature">
         <span class="feature-icon">◬</span>
-        <h3>Resilience primitives</h3>
-        <p>Built-in <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">.retry(n)</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c9a84c">.t(ms)</code> on every async operation. Production-grade resilience without boilerplate.</p>
+        <h3>Built-in retries and timeouts</h3>
+        <p>Every async operation supports <code>.retry(n)</code> (exponential backoff) and <code>.t(ms)</code> (timeout decorator). The interpreter treats <code>.t()</code> as a no-op but retains the decorator; compiled targets evaluate it directly.</p>
       </div>
     </div>
   </div>
@@ -1097,8 +1097,8 @@ http.<span class="f">serve</span>(<span class="n">3000</span>, [<span class="s">
           <span class="syntax-card-title">Functions &amp; types</span>
           <span class="syntax-tag">core</span>
         </div>
-        <pre><span class="c">-- function: name -> args: body</span>
-<span class="f">add</span><span class="k">-></span>a<span class="op">:</span><span class="k2">N</span> b<span class="op">:</span><span class="k2">N</span><span class="op">:</span><span class="k2">N</span>  a<span class="k">+</span>b
+        <pre><span class="c">-- function: name -&gt; args: body</span>
+<span class="f">add</span><span class="k">-&gt;</span>a<span class="op">:</span><span class="k2">N</span> b<span class="op">:</span><span class="k2">N</span><span class="op">:</span><span class="k2">N</span>  a<span class="k">+</span>b
 
 <span class="c">-- exported function</span>
 <span class="k">^</span><span class="f">createUser</span><span class="k">-></span>req<span class="op">:</span>
@@ -1162,21 +1162,17 @@ updated <span class="k">=</span> <span class="op">{*</span>original, status<span
           <span class="syntax-card-title">Full app example</span>
           <span class="syntax-tag">real world</span>
         </div>
-        <pre><span class="k">@</span><span class="k2">web</span><span class="k">+@</span><span class="k2">ios</span><span class="k">+@</span><span class="k2">android</span>
-<span class="k">#</span><span class="k2">ui</span> <span class="k">#</span><span class="k2">http.ws</span> <span class="k">#</span><span class="k2">auth</span>
+        <pre><span class="k">@</span><span class="k2">api</span>  <span class="k">#</span><span class="k2">http</span> <span class="k">#</span><span class="k2">db.pg</span>
 
-<span class="k">~</span>msgs<span class="op">:</span>[<span class="k2">S</span>]<span class="k">=</span>[]
-<span class="k">~</span>input<span class="op">:</span><span class="k2">S</span><span class="k">=</span><span class="s">""</span>
-ws <span class="k">=</span> http.<span class="f">ws</span>(<span class="s">"wss://api/room"</span>)<span class="k">?</span>
-ws.<span class="f">on</span>(m <span class="k">-></span> <span class="k">~</span>msgs<span class="k">=</span>[<span class="k">*</span>msgs, m])
+<span class="t">type</span> <span class="k2">Order</span><span class="op">:{</span>id<span class="op">:</span><span class="k2">N</span>, amt<span class="op">:</span><span class="k2">N</span>, uid<span class="op">:</span><span class="k2">S</span><span class="op">}</span>
 
-ui.<span class="f">view</span>[
-  msgs<span class="k">*</span>(m <span class="k">-></span> ui.<span class="f">bubble</span> m)
-  ui.<span class="f">row</span>[
-    ui.<span class="f">input</span><span class="op">{</span>val<span class="op">:</span>input<span class="op">}</span>
-    ui.<span class="f">btn</span><span class="op">{</span>tap<span class="op">:</span>ws.<span class="f">send</span>(input)<span class="op">}</span> <span class="s">"Send"</span>
-  ]
-]</pre>
+<span class="k">^</span><span class="f">getOrder</span><span class="k">-&gt;</span>req<span class="op">:</span>
+  tok  <span class="k">=</span> auth.<span class="f">verify</span>(req.header.token)<span class="k">?</span>
+  user <span class="k">=</span> db.<span class="f">q</span>(<span class="s">"users"</span>, <span class="op">{</span>id<span class="op">:</span>req.p.id<span class="op">}</span>)<span class="k">?</span>
+  <span class="k">!</span>user
+
+routes <span class="k">=</span> <span class="op">{</span>"/orders/:id"<span class="op">:</span> getOrder, "/orders"<span class="op">:</span> createOrder<span class="op">}</span>
+http.<span class="f">serve</span>(<span class="n">3000</span>, routes)</pre>
       </div>
     </div>
   </div>
@@ -1200,7 +1196,7 @@ ui.<span class="f">view</span>[
         <div class="mode-label">JIT</div>
         <code class="mode-cmd">karn run --jit server.kn</code>
         <h3>Hotspot compilation</h3>
-        <p>Starts interpreted, profiles execution, JIT-compiles hot functions to native code on-the-fly. Best for warm services and ML training loops.</p>
+        <p>Starts interpreted, profiles hot functions, JIT-compiles them to Python and caches compiled code. Best-effort: unsupported AST nodes (e.g. complex match expressions) fall back to tree-walk silently. Best for warm services and ML loops.</p>
       </div>
       <div class="mode-card compiled">
         <div class="mode-label">Compiled</div>
