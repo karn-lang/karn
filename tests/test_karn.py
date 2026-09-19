@@ -37,7 +37,21 @@ print("\n\033[33mLexer Tests\033[0m")
 def _():
     toks = Lexer("42 3.14 -7").tokenize()
     vals = [t.value for t in toks if t.type == TT.NUMBER]
-    assert vals == [42, 3.14, -7], f"got {vals}"
+    # '-' after a number is binary subtraction, not a negative literal
+    assert vals == [42, 3.14, 7], f"got {vals}"
+
+@test("lex negative numbers in unary position")
+def _():
+    for src in ("x = -7", "(-7)", "f(-7)", "a, -7"):
+        toks = Lexer(src).tokenize()
+        vals = [t.value for t in toks if t.type == TT.NUMBER]
+        assert vals == [-7], f"{src!r}: got {vals}"
+
+@test("lex subtraction without spaces")
+def _():
+    toks = Lexer("x-1").tokenize()
+    types = [t.type for t in toks if t.type != TT.EOF]
+    assert types == [TT.IDENT, TT.MINUS, TT.NUMBER], f"got {types}"
 
 @test("lex strings")
 def _():
@@ -216,6 +230,28 @@ def _():
     assert isinstance(ast.stmts[0], TargetDecl)
     assert ast.stmts[0].targets == ["web", "ios"]
 
+@test("parse parallel &")
+def _():
+    from files.karn import Par
+    ast = parse("f() & g()")
+    assert isinstance(ast.stmts[0], Par)
+    assert len(ast.stmts[0].exprs) == 2
+
+@test("parse parallel & with parens and values")
+def _():
+    from files.karn import Par
+    ast = parse("(f()) & (g())")
+    assert isinstance(ast.stmts[0], Par)
+    ast = parse("1 & 2")
+    assert isinstance(ast.stmts[0], Par)
+
+@test("parse single pipe | with bare function")
+def _():
+    from files.karn import Pipe
+    ast = parse("double(5) | double")
+    assert isinstance(ast.stmts[0], Pipe)
+    assert len(ast.stmts[0].stages) == 2
+
 
 # ═══════════════════════════════════════════════════════════
 #  INTERPRETER TESTS
@@ -371,6 +407,26 @@ def _():
     r, _ = run("a = 1\nb = 2\na + b")
     assert r == 3, f"got {r}"
 
+@test("interpret subtraction without spaces")
+def _():
+    r, _ = run("x = 10\nx-1")
+    assert r == 9, f"got {r}"
+
+@test("interpret call arg without spaces")
+def _():
+    r, _ = run("f->n: n\nf(5-1)")
+    assert r == 4, f"got {r}"
+
+@test("interpret parallel & calls")
+def _():
+    r, _ = run("f->: 1\ng->: 2\nf() & g()")
+    assert r == [1, 2], f"got {r}"
+
+@test("interpret single pipe | with bare function")
+def _():
+    r, _ = run("double->x: x*2\ndouble(5) | double")
+    assert r == 20, f"got {r}"
+
 @test("interpret recursion (factorial)")
 def _():
     r, _ = run("fact->n:N:N\n  match n{ 0 -> 1, _ -> n * fact(n - 1) }\nfact(5)")
@@ -461,6 +517,46 @@ def _():
 def _():
     code = gen('! "hello"')
     assert 'print' in code
+
+@test("codegen implicit return")
+def _():
+    code = gen("add->a b: a+b")
+    assert "return (a + b)" in code, f"got:\n{code}"
+
+@test("codegen match expression")
+def _():
+    code = gen("match x{ 0 -> 1, _ -> 2 }")
+    assert "_match(" in code, f"got:\n{code}"
+    assert "None  # match" not in code
+
+@test("codegen index")
+def _():
+    code = gen("a[0]")
+    assert "_idx(" in code, f"got:\n{code}"
+
+@test("codegen spread in list")
+def _():
+    code = gen("[*a, 3]")
+    assert "*a" in code, f"got:\n{code}"
+
+@test("codegen fibonacci executes to 55")
+def _():
+    src = ("fib->n:N:N\n  match n{\n    0 -> 0\n    1 -> 1\n"
+           "    x -> fib(x - 1) + fib(x - 2)\n  }")
+    code = gen(src)
+    ns = {}
+    exec(compile(code, "<test>", "exec"), ns)
+    assert ns["fib"](10) == 55, f"got {ns['fib'](10)}"
+
+@test("codegen rejects unemittable nodes")
+def _():
+    from files.karn import CodeGen, CodegenError, Ternary
+    codegen = CodeGen(target='python')
+    try:
+        codegen.gen_expr(Ternary(cond=None, then_=None, else_=None))
+    except CodegenError:
+        return
+    raise AssertionError("expected CodegenError")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -649,6 +745,238 @@ def _():
     code = gen_c("type User:{id:N, name:S}")
     assert 'typedef struct' in code
     assert 'User_t' in code
+
+
+# ═══════════════════════════════════════════════════════════
+#  JIT TESTS
+# ═══════════════════════════════════════════════════════════
+
+print("\n\033[33mJIT Tests\033[0m")
+
+def run_jit(src):
+    ast = parse(src)
+    interp = Interpreter()
+    interp.jit_mode = True
+    result = None
+    for stmt in ast.stmts:
+        try:
+            result = interp.eval(stmt, interp.global_env)
+        except EmitSignal as e:
+            result = e.value
+    return result, interp
+
+@test("jit fibonacci matches interpreter")
+def _():
+    src = ("fib->n:N:N\n  match n{\n    0 -> 0\n    1 -> 1\n"
+           "    x -> fib(x - 1) + fib(x - 2)\n  }\n! fib(10)")
+    r, _ = run_jit(src)
+    assert r == 55, f"got {r}"
+
+@test("jit compiles simple functions faithfully")
+def _():
+    # 11 calls: threshold (10) trips on call 10, call 11 runs compiled code
+    r, interp = run_jit("add->a b: a+b\n" + "\n".join(["! add(3, 4)"] * 11))
+    assert r == 7, f"got {r}"
+    assert getattr(interp.global_env.bindings["add"], "_jit_fn", None) is not None
+
+@test("jit invalidates on global rebind")
+def _():
+    src = ("~c = 1\nf->x: x + c\n" + "\n".join(["! f(0)"] * 11)
+           + "\n~c = 100\n! f(0)")
+    r, _ = run_jit(src)
+    assert r == 100, f"got {r}"
+
+
+# ═══════════════════════════════════════════════════════════
+#  BATCH 2 — STDLIB PRELUDE / ERRORS / IMMUTABILITY / TARGETS
+# ═══════════════════════════════════════════════════════════
+
+print("\n\033[33mBatch 2 Tests\033[0m")
+
+def gen_exec(src):
+    """Generate python code and exec it, returning the namespace."""
+    code = gen(src)
+    ns = {}
+    exec(compile(code, "<test>", "exec"), ns)
+    return ns
+
+def run_cli_src(src, *args):
+    """Run `karn <args...> <tmpfile.kn>`; file path goes after subcommand."""
+    import subprocess
+    import tempfile
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with tempfile.NamedTemporaryFile("w", suffix=".kn", delete=False) as f:
+        f.write(src)
+        path = f.name
+    try:
+        cmd = [sys.executable, "files/karn.py", args[0], path, *args[1:]]
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=120, cwd=root)
+    finally:
+        os.unlink(path)
+
+@test("py stdlib math/fs/log/json/str execute")
+def _():
+    import tempfile
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "t.txt")
+    src = (f'fs.write("{p}", "hi")\n'
+           f'c = fs.read("{p}")?\n'
+           'm = math.sqrt(16)\n'
+           'j = json.parse(\'{"a": 1}\')?\n'
+           's = str.join(["a", "b"], "-")?\n'
+           'log.info("x")')
+    ns = gen_exec(src)
+    assert ns["c"] == "hi", ns.get("c")
+    assert ns["m"] == 4.0, ns.get("m")
+    assert ns["j"] == {"a": 1}, ns.get("j")
+    assert ns["s"] == "a-b", ns.get("s")
+
+@test("py stdlib time/crypto/env/db execute")
+def _():
+    ns = gen_exec('t = time.date()?\n'
+                  'y = t["year"]\n'
+                  'u = crypto.md5("x")?\n'
+                  'h = env.get("NOPE_KARN_TEST", "dflt")?\n'
+                  'q = db.q("t")?')
+    assert isinstance(ns["y"], int), ns.get("y")
+    assert len(ns["u"]) == 32, ns.get("u")
+    assert ns["h"] == "dflt", ns.get("h")
+    assert ns["q"] == [], ns.get("q")
+
+@test("py getattr dict/list/str parity")
+def _():
+    ns = gen_exec('d = {a: 1}\nx = d.a\ny = [1, 2].len()\nz = "hi".upper()')
+    assert ns["x"] == 1, ns.get("x")
+    assert ns["y"] == 2, ns.get("y")
+    assert ns["z"] == "HI", ns.get("z")
+
+@test("py len failure is error value")
+def _():
+    ns = gen_exec('x = len(42)')
+    assert type(ns["x"]).__name__ == "_Err", ns.get("x")
+
+@test("div by zero is KarnError")
+def _():
+    try:
+        run("1/0")
+    except KarnError as e:
+        assert "Division by zero" in str(e), e
+        return
+    raise AssertionError("expected KarnError")
+
+@test("missing map key is KarnError")
+def _():
+    try:
+        run('m = {a: 1}\nm["b"]')
+    except KarnError as e:
+        assert "Map has no key" in str(e), e
+        return
+    raise AssertionError("expected KarnError")
+
+@test("list OOB is KarnError")
+def _():
+    try:
+        run("a = [1]\na[5]")
+    except KarnError as e:
+        assert "out of range" in str(e), e
+        return
+    raise AssertionError("expected KarnError")
+
+@test("bad index type is KarnError")
+def _():
+    try:
+        run('[1]["a"]')
+    except KarnError as e:
+        assert "Cannot index" in str(e), e
+        return
+    raise AssertionError("expected KarnError")
+
+@test("cli run runtime error exits 1 without traceback")
+def _():
+    r = run_cli_src("! (1/0)", "run")
+    assert r.returncode == 1, r
+    assert "Traceback" not in (r.stdout + r.stderr), r.stderr[-500:]
+
+@test("cli run top-level ? error exits 1")
+def _():
+    r = run_cli_src('Err("boom")?', "run")
+    assert r.returncode == 1, r
+    assert "Traceback" not in (r.stdout + r.stderr), r.stderr[-500:]
+
+@test("cli run success exits 0")
+def _():
+    r = run_cli_src('! "hi"', "run")
+    assert r.returncode == 0, r
+    assert "hi" in r.stdout, r.stdout
+
+@test("plain = cannot rebind")
+def _():
+    try:
+        run("x = 1\nx = 2")
+    except KarnError as e:
+        assert "Cannot rebind" in str(e), e
+        return
+    raise AssertionError("expected KarnError")
+
+@test("mutable rebind works")
+def _():
+    r, _ = run("~x = 1\n~x = 2\n!x")
+    assert r == 2, r
+
+@test("shadowing in child scope is allowed")
+def _():
+    r, _ = run("x = 1\nf->:\n  x = 2\nf()\n!x")
+    assert r == 1, r
+
+@test("js kwargs raise CodegenError")
+def _():
+    from files.karn import CodegenError
+    try:
+        gen_js("f(x:1)")
+    except CodegenError:
+        return
+    raise AssertionError("expected CodegenError")
+
+@test("c string equality uses content compare")
+def _():
+    code = gen_c('"a" == "b"')
+    assert "karn_eq(" in code, code[-400:]
+
+@test("c comparison integration")
+def _():
+    import shutil
+    import subprocess
+    import tempfile
+    from files.karn import compile_file
+    cc = shutil.which("gcc") or shutil.which("cc")
+    if cc is None:
+        return  # skip without a C toolchain
+    src = '! [("a" == "b"), ("a" == "a"), (3 > 2), ("b" > "a"), ([1] == [1, 2])]'
+    with tempfile.TemporaryDirectory() as d:
+        c_path = os.path.join(d, "t.c")
+        exe = os.path.join(d, "t")
+        open(c_path, "w").write(compile_file(src, "t.kn", "c"))
+        r = subprocess.run([cc, c_path, "-o", exe, "-lm"],
+                           capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stderr[-1000:]
+        r = subprocess.run([exe], capture_output=True, text=True, timeout=30)
+        assert r.stdout.strip() == "[false, true, true, true, false]", r.stdout
+
+@test("unknown build target raises CodegenError")
+def _():
+    from files.karn import compile_file, CodegenError
+    try:
+        compile_file("! 1", "t.kn", "ios")
+    except CodegenError:
+        return
+    raise AssertionError("expected CodegenError")
+
+@test("cli rejects removed targets")
+def _():
+    r = run_cli_src("! 1", "build", "--target", "ios")
+    assert r.returncode != 0, r
+    assert "invalid choice" in r.stderr, r.stderr[-300:]
 
 
 # ═══════════════════════════════════════════════════════════

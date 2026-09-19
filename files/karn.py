@@ -125,6 +125,14 @@ KEYWORDS = {
     'Err':   TT.IDENT,
 }
 
+# Tokens after which '-' is binary subtraction, not a negative literal.
+# (Anything else — start of input/line, operators, open delimiters —
+#  is a unary position where '-7' lexes as one NUMBER token.)
+_NON_UNARY_TOKENS = frozenset({
+    TT.NUMBER, TT.STRING, TT.BOOL, TT.NIL, TT.IDENT, TT.UNDER,
+    TT.RPAREN, TT.RBRACK, TT.RBRACE,
+})
+
 class LexError(Exception):
     def __init__(self, msg, line, col):
         super().__init__(f"[Lex Error] {msg} at {line}:{col}")
@@ -154,6 +162,20 @@ class Lexer:
 
     def add(self, tt: TT, value: Any, line=None, col=None):
         self.tokens.append(Token(tt, value, line or self.line, col or self.col))
+
+    def _unary_minus_valid(self) -> bool:
+        """True when '-' starts a negative literal (unary position).
+
+        'x-1' must lex as x, -, 1 (subtraction), while '(-1)',
+        'x=-1' and a line-initial '-1' lex -1 as one NUMBER token.
+        """
+        for t in reversed(self.tokens):
+            if t.type in (TT.INDENT, TT.DEDENT):
+                continue
+            if t.type == TT.NEWLINE:
+                return True
+            return t.type not in _NON_UNARY_TOKENS
+        return True
 
     def tokenize(self) -> List[Token]:
         while self.pos < len(self.src):
@@ -220,8 +242,9 @@ class Lexer:
             self.add(TT.STRING, ''.join(s), line, col)
             return
 
-        # Numbers
-        if ch.isdigit() or (ch == '-' and self.peek(1).isdigit()):
+        # Numbers (a '-' starts a negative literal only in unary position)
+        if ch.isdigit() or (ch == '-' and self.peek(1).isdigit()
+                            and self._unary_minus_valid()):
             start = self.pos
             if ch == '-': self.advance()
             while self.peek().isdigit(): self.advance()
@@ -483,6 +506,13 @@ class RetryExpr:
 class ParseError(Exception):
     def __init__(self, msg, token: Token):
         super().__init__(f"[Parse Error] {msg} at line {token.line}:{token.col} (got {token.type.name} {token.value!r})")
+
+class CodegenError(Exception):
+    """Raised when an AST node cannot be faithfully emitted for a target.
+
+    Emitting a wrong placeholder (e.g. None) would silently miscompile,
+    so unsupported nodes fail loudly instead.
+    """
 
 class Parser:
     def __init__(self, tokens: List[Token]):
@@ -835,11 +865,12 @@ class Parser:
     def parse_pipe(self) -> Node:
         left = self.parse_par()
         if self.check(TT.PIPE):
-            # | is pipe only if followed by callable-like expr
+            # | is pipe, except when clearly not: | followed by a value
+            # literal or parenthesized expr (e.g. a | (b)). A bare name is
+            # assumed to be a function reference; misuse raises a clear
+            # KarnError at runtime instead of a parse error.
             nxt = self.peek(1)
             if nxt.type in (TT.NUMBER, TT.STRING, TT.LPAREN):
-                return left
-            if nxt.type == TT.IDENT and not self._is_callable_next():
                 return left
             stages = [left]
             while self.check(TT.PIPE):
@@ -857,27 +888,15 @@ class Parser:
     def parse_par(self) -> Node:
         left = self.parse_seq()
         if self.check(TT.AMP):
-            # & is parallel only if followed by callable-like expr
-            nxt = self.peek(1)
-            if nxt.type in (TT.NUMBER, TT.STRING, TT.LPAREN):
-                return left
-            if nxt.type == TT.IDENT and not self._is_callable_next():
-                return left
+            # & is always parallel: Par evaluates (never calls) each side,
+            # so any expression — values, calls, parenthesized groups —
+            # is a legal participant. AMP has no other meaning in KARN.
             exprs = [left]
             while self.check(TT.AMP):
                 self.advance()
                 exprs.append(self.parse_seq())
             return Par(exprs=exprs, line=left.line)
         return left
-
-    def _is_callable_next(self) -> bool:
-        """Check if next token looks like a function call or method access."""
-        t = self.peek(1)
-        if t.type == TT.LPAREN:
-            return True
-        if t.type == TT.DOT:
-            return True
-        return False
 
     def parse_seq(self) -> Node:
         return self.parse_race()
@@ -1495,6 +1514,24 @@ class Interpreter:
         self.type_defs: Dict[str, TypeDef] = {}
         self.call_counts: Dict[str, int] = {}
         self.jit_mode = False
+        self._jit_fns: List[KarnFn] = []  # functions with compiled code cached
+
+    def _invalidate_jit(self, env: Env):
+        """Drop JIT-compiled code closing over `env`.
+
+        Compiled functions snapshot globals by value; any write to an env
+        on their closure chain makes the snapshot stale, so fall back to
+        tree-walk (recompilation may re-engage afterwards).
+        """
+        if not self._jit_fns:
+            return
+        for fn in self._jit_fns:
+            e = fn.closure
+            while e is not None:
+                if e is env:
+                    fn._jit_fn = None
+                    break
+                e = e.parent
 
     def run(self, program: Program) -> Any:
         result = None
@@ -1548,10 +1585,20 @@ class Interpreter:
             return result
 
         if t == Bind:
+            value = self.eval(node.value, env)
             if node.mutable and node.name in env.bindings:
-                env.rebind(node.name, self.eval(node.value, env))
+                env.rebind(node.name, value)
             else:
-                env.set(node.name, self.eval(node.value, env), mutable=node.mutable)
+                if not node.mutable and node.name in env.bindings:
+                    # Plain `=` binds once per scope; rebinding needs `~`.
+                    # (Fresh shadowing in a child scope is unaffected —
+                    # that env doesn't contain the name.)
+                    raise KarnError(
+                        f"Cannot rebind '{node.name}' with '=' — "
+                        f"use '~{node.name} = ...' to rebind",
+                        line=node.line)
+                env.set(node.name, value, mutable=node.mutable)
+            self._invalidate_jit(env)
             return None
 
         if t == Emit:
@@ -1568,9 +1615,15 @@ class Interpreter:
             if node.op in ops:
                 try:
                     return ops[node.op](l, r)
+                except KarnError:
+                    raise
+                except ZeroDivisionError:
+                    raise KarnError("Division by zero", line=node.line)
                 except TypeError:
                     raise KarnError(f"Type error: cannot {node.op} {type(l).__name__} and {type(r).__name__}",
                                     line=node.line)
+                except Exception as e:
+                    raise KarnError(f"Operator {node.op} failed: {e}", line=node.line)
             raise KarnError(f"Unknown operator: {node.op}", line=node.line)
 
         if t == GetAttr:
@@ -1580,10 +1633,17 @@ class Interpreter:
         if t == Index:
             obj = self.eval(node.obj, env)
             idx = self.eval(node.index, env)
-            if isinstance(obj, (list, str)):
-                return obj[int(idx)]
-            if isinstance(obj, dict):
-                return obj[idx]
+            try:
+                if isinstance(obj, (list, str)):
+                    return obj[int(idx)]
+                if isinstance(obj, dict):
+                    return obj[idx]
+            except KeyError:
+                raise KarnError(f"Map has no key {idx!r}", line=node.line)
+            except IndexError:
+                raise KarnError(f"Index out of range: {idx!r}", line=node.line)
+            except (TypeError, ValueError) as e:
+                raise KarnError(f"Cannot index: {e}", line=node.line)
             raise KarnError(f"Cannot index {type(obj).__name__}", line=node.line)
 
         if t == Call:
@@ -1596,8 +1656,10 @@ class Interpreter:
             fn = KarnFn(node=node, closure=env)
             if node.name:
                 env.set(node.name, fn)
+                self._invalidate_jit(env)
                 if node.exported:
                     self.global_env.set(node.name, fn)
+                    self._invalidate_jit(self.global_env)
             return fn
 
         if t == Pipe:
@@ -1681,6 +1743,7 @@ class Interpreter:
                 return KarnType(type_name=node.name,
                                 fields=dict(zip(flds, args)))
             env.set(node.name, positional_ctor)
+            self._invalidate_jit(env)
             return None
 
         if t == TraitDef:
@@ -1770,29 +1833,36 @@ class Interpreter:
         raise KarnError(f"Not callable: {type(fn).__name__} {fn!r}")
 
     def _jit_compile(self, fn: KarnFn):
-        """Compile a hot KARN function to a Python callable."""
-        from karn import CodeGen  # import here to avoid circular at module level
+        """Compile a hot KARN function to a Python callable (best-effort).
+
+        Uses the same CodeGen as `karn build --target python`, including the
+        shared runtime prelude. CodegenError (or any failure) propagates to
+        the caller's try/except, which falls back to tree-walk — JIT never
+        runs miscompiled code.
+        """
+        if not fn.node.name:
+            return
         gen = CodeGen(target='python')
+        gen.emit_runtime_prelude()
         gen.gen_fn(fn.node)
         py_code = '\n'.join(gen.lines)
 
-        # Compile and execute in a namespace
-        namespace = {}
-        # Inject stdlib into namespace
+        # Compile and execute in a namespace seeded with globals
+        namespace: Dict[str, Any] = {}
         for name, val in self.global_env.bindings.items():
-            if not callable(val) or isinstance(val, KarnFn):
-                namespace[name] = val
-        # Inject Ok/Err
-        namespace['_Ok'] = OkVal
-        namespace['_Err'] = KarnError
-        namespace['_prop'] = lambda v: v.value if isinstance(v, OkVal) else (v if not isinstance(v, KarnError) else (_ for _ in ()).throw(v))
+            namespace[name] = val
+        # Ok/Err constructors mirror Ident evaluation in the interpreter
+        namespace['Ok'] = lambda v: OkVal(v)
+        namespace['Err'] = lambda v: KarnError(str(v))
 
         compiled = compile(py_code, f"<jit:{fn.node.name}>", 'exec')
         exec(compiled, namespace)
 
-        fn_name = fn.node.name.replace('.', '__').replace('-', '_')
+        fn_name = CodeGen._pyname(fn.node.name)
         if fn_name in namespace:
             fn._jit_fn = namespace[fn_name]
+            if fn not in self._jit_fns:
+                self._jit_fns.append(fn)
 
     def _get_attr(self, obj: Any, attr: str) -> Any:
         if isinstance(obj, StdlibModule):
@@ -1898,6 +1968,7 @@ class Interpreter:
         }
         if top in modules:
             env.set(top, modules[top])
+            self._invalidate_jit(env)
         return None
 
     def _load_extern(self, node: ExternImport, env: Env):
@@ -1929,6 +2000,7 @@ class Interpreter:
             except OSError:
                 print(f"[karn:warn] system library '{node.package}' not found", file=sys.stderr)
                 env.set(node.alias, None)
+        self._invalidate_jit(env)
         return None
 
 
@@ -1992,6 +2064,15 @@ class SysInterop(StdlibModule):
 #  CODE GENERATOR — emits Python (for portable compilation)
 # ═══════════════════════════════════════════════════════════
 
+# Expression node types whose value a function returns when last in its
+# body (mirrors the interpreter, which returns the last statement's value).
+_PY_AUTO_RETURN_TYPES = (
+    NumberLit, StringLit, BoolLit, NilLit, Ident,
+    ListLit, MapLit, BinOp, GetAttr, Call, Propagate, Fallback,
+    Pipe, Par, MapOp, FilterOp, RangeExpr, MatchExpr,
+    Index, RetryExpr, TimeoutExpr,
+)
+
 class CodeGen:
     """Emits runnable Python from KARN AST.
        Targets: python (portable), js (Node.js), c (via LLVM stub)
@@ -2007,11 +2088,25 @@ class CodeGen:
         self.lines.append('    ' * self.indent + line)
 
     def generate(self, program: Program) -> str:
+        self.emit_runtime_prelude()
+        for stmt in program.stmts:
+            self.gen_stmt(stmt)
+        return '\n'.join(self.lines)
+
+    def emit_runtime_prelude(self):
+        """Builtin runtime shared by generated programs and JIT-compiled fns."""
         self.emit_line('# Generated by KARN agc v1.0')
         self.emit_line('# DO NOT EDIT — edit the .kn source instead')
         self.emit_line('')
         self.emit_line('from __future__ import annotations')
-        self.emit_line('import sys, os, json, time')
+        self.emit_line('import builtins as _bi')
+        self.emit_line('import sys as _sys, os as _os, json as _json, time as _time')
+        self.emit_line('import urllib.request as _urlreq')
+        self.emit_line('import math as _math')
+        self.emit_line('import hashlib as _hashlib')
+        self.emit_line('import base64 as _base64')
+        self.emit_line('import uuid as _uuid')
+        self.emit_line('import datetime as _datetime')
         self.emit_line('')
         self.emit_line('class _Ok:')
         self.indent += 1
@@ -2023,20 +2118,458 @@ class CodeGen:
         self.indent += 1
         self.emit_line('def __init__(self, msg, ctx=None): self.msg=msg; self.ctx=ctx or []')
         self.emit_line('def __repr__(self): return f"Err({self.msg!r})"')
+        self.emit_line('def __str__(self): return self.msg')
         self.indent -= 1
         self.emit_line('')
         self.emit_line('def _prop(v):')
         self.indent += 1
-        self.emit_line('if isinstance(v, _Err): raise v')
-        self.emit_line('if isinstance(v, _Ok): return v.v')
+        self.emit_line('if _bi.isinstance(v, _Err): raise v')
+        self.emit_line('if _bi.isinstance(v, _Ok): return v.v')
         self.emit_line('return v')
         self.indent -= 1
         self.emit_line('')
+        self.emit_line('def Ok(v):')
+        self.indent += 1
+        self.emit_line('return _Ok(v)')
+        self.indent -= 1
+        self.emit_line('def Err(m):')
+        self.indent += 1
+        self.emit_line('return _Err(str(m))')
+        self.indent -= 1
+        self.emit_line('')
+        self.emit_line('def _match(subj, arms):')
+        self.indent += 1
+        self.emit_line("for kind, val, fn in arms:")
+        self.indent += 1
+        self.emit_line("if kind == 'ok':")
+        self.indent += 1
+        self.emit_line('if _bi.isinstance(subj, _Ok): return fn(subj.v) if val else fn(subj)')
+        self.indent -= 1
+        self.emit_line("elif kind == 'err':")
+        self.indent += 1
+        self.emit_line('if _bi.isinstance(subj, _Err): return fn(subj)')
+        self.indent -= 1
+        self.emit_line("elif kind == 'lit':")
+        self.indent += 1
+        self.emit_line('if subj == val: return fn(subj)')
+        self.indent -= 1
+        self.emit_line("elif kind in ('cap', 'wild'):")
+        self.indent += 1
+        self.emit_line('return fn(subj)')
+        self.indent -= 2
+        self.emit_line('return None')
+        self.indent -= 1
+        self.emit_line('')
+        self.emit_line('def _idx(o, i):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('if _bi.isinstance(o, (_bi.list, _bi.str)): return o[_bi.int(i)]')
+        self.emit_line('if _bi.isinstance(o, _bi.dict): return o[i]')
+        self.emit_line('raise _Err(f"Cannot index {_bi.type(o).__name__}")')
+        self.indent -= 1
+        self.emit_line('except _Err as e:')
+        self.indent += 1
+        self.emit_line('return e')
+        self.indent -= 1
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(_bi.str(e))')
+        self.indent -= 2
+        self.emit_line('')
+        self.emit_line('def _retry(fn, n):')
+        self.indent += 1
+        self.emit_line('_v = None')
+        self.emit_line('for _i in _bi.range(_bi.int(n)):')
+        self.indent += 1
+        self.emit_line('_v = fn()')
+        self.emit_line('if not _bi.isinstance(_v, _Err): return _v')
+        self.emit_line('if _i < _bi.int(n) - 1: _time.sleep(0.1 * (2 ** _i))')
+        self.indent -= 1
+        self.emit_line('return _v')
+        self.indent -= 1
+        self.emit_line('')
+        self.emit_line('def _emit(v):')
+        self.indent += 1
+        self.emit_line('_bi.print(v)')
+        self.emit_line('return v')
+        self.indent -= 1
+        self.emit_line('')
+        self._emit_py_stdlib()
 
-        for stmt in program.stmts:
-            self.gen_stmt(stmt)
+    def _emit_py_stdlib(self):
+        """Python stdlib prelude mirroring the interpreter modules.
 
-        return '\n'.join(self.lines)
+        All builtins used internally are _bi.*-qualified so user binds
+        named str/len/int/... can't break the runtime. KARN-facing names
+        (http, fs, ..., range, print, ...) stay shadowable, exactly like
+        interpreter env bindings.
+        """
+        self.emit_line('def _ktruthy(v):')
+        self.indent += 1
+        self.emit_line('if v is None or v is False: return False')
+        self.emit_line('if _bi.isinstance(v, (_bi.int, _bi.float)): return v != 0')
+        self.emit_line('if _bi.isinstance(v, _bi.str): return _bi.len(v) > 0')
+        self.emit_line('if _bi.isinstance(v, _bi.list): return _bi.len(v) > 0')
+        self.emit_line('if _bi.isinstance(v, _Err): return False')
+        self.emit_line('return True')
+        self.indent -= 1
+        self.emit_line('')
+        self.emit_line('def _getattr(o, name):')
+        self.indent += 1
+        self.emit_line("if _bi.isinstance(o, (_Ok, _Err)):")
+        self.indent += 1
+        self.emit_line('return _Err(f"Cannot get \'{name}\' from {\'Ok\' if _bi.isinstance(o, _Ok) else \'Err\'}")')
+        self.indent -= 1
+        self.emit_line('if _bi.isinstance(o, _bi.dict):')
+        self.indent += 1
+        self.emit_line('if name in o: return o[name]')
+        self.emit_line('return _Err(f"Map has no key \'{name}\'")')
+        self.indent -= 1
+        self.emit_line('if _bi.isinstance(o, _bi.list):')
+        self.indent += 1
+        self.emit_line("if name == 'len': return lambda: _bi.len(o)")
+        self.emit_line("if name == 'first': return lambda: o[0] if o else None")
+        self.emit_line("if name == 'last': return lambda: o[-1] if o else None")
+        self.emit_line("if name == 'append': return lambda x: [*o, x]")
+        self.emit_line("if name == 'map': return lambda f: [f(_i) for _i in o]")
+        self.emit_line("if name == 'filter': return lambda f: [_i for _i in o if _ktruthy(f(_i))]")
+        self.emit_line("if name == 'join': return lambda s='': s.join(_bi.str(_i) for _i in o)")
+        self.emit_line('return _Err(f"List has no method \'{name}\'")')
+        self.indent -= 1
+        self.emit_line('if _bi.isinstance(o, _bi.str):')
+        self.indent += 1
+        self.emit_line("if name == 'len': return lambda: _bi.len(o)")
+        self.emit_line("if name == 'upper': return lambda: o.upper()")
+        self.emit_line("if name == 'lower': return lambda: o.lower()")
+        self.emit_line("if name == 'trim': return lambda: o.strip()")
+        self.emit_line("if name == 'split': return lambda s=' ': o.split(s)")
+        self.emit_line("if name == 'hash': return lambda: _bi.hash(o)")
+        self.emit_line("if name == 'contains': return lambda s: s in o")
+        self.emit_line('return _Err(f"String has no method \'{name}\'")')
+        self.indent -= 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('return _bi.getattr(o, name)')
+        self.indent -= 1
+        self.emit_line('except Exception:')
+        self.indent += 1
+        self.emit_line('return _Err(f"Cannot get \'{name}\' from {_bi.type(o).__name__}")')
+        self.indent -= 2
+        self.emit_line('')
+        self.emit_line('class _HttpMod:')
+        self.indent += 1
+        self.emit_line('def get(self, url, **kw):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('with _urlreq.urlopen(_bi.str(url), timeout=kw.get(\'timeout\', 10)) as r:')
+        self.indent += 1
+        self.emit_line('return _Ok(r.read().decode())')
+        self.indent -= 2
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(_bi.str(e))')
+        self.indent -= 2
+        self.emit_line('def serve(self, port, routes):')
+        self.indent += 1
+        self.emit_line('_bi.print(f"[karn:http] Serving on port {port}")')
+        self.emit_line('_bi.print(f"[karn:http] Routes: {routes}")')
+        self.emit_line('return _Ok(None)')
+        self.indent -= 1
+        self.emit_line('def ws(self, url):')
+        self.indent += 1
+        self.emit_line('return _Ok({"url": url, "_type": "ws"})')
+        self.indent -= 2
+        self.emit_line('http = _HttpMod()')
+        self.emit_line('')
+        self.emit_line('class _FsMod:')
+        self.indent += 1
+        self.emit_line('def read(self, path):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('with _bi.open(_bi.str(path)) as f:')
+        self.indent += 1
+        self.emit_line('return _Ok(f.read())')
+        self.indent -= 2
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(_bi.str(e))')
+        self.indent -= 2
+        self.emit_line('def write(self, path, content):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('with _bi.open(_bi.str(path), \'w\') as f:')
+        self.indent += 1
+        self.emit_line('f.write(_bi.str(content))')
+        self.indent -= 1
+        self.emit_line('return _Ok(None)')
+        self.indent -= 1
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(_bi.str(e))')
+        self.indent -= 2
+        self.emit_line('def list(self, path=\'.\'):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('return _Ok(_os.listdir(_bi.str(path)))')
+        self.indent -= 1
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(_bi.str(e))')
+        self.indent -= 2
+        self.indent -= 1
+        self.emit_line('fs = _FsMod()')
+        self.emit_line('')
+        self.emit_line('class _LogMod:')
+        self.indent += 1
+        self.emit_line('def _fmt(self, v):')
+        self.indent += 1
+        self.emit_line('if _bi.isinstance(v, _bi.dict): return _json.dumps(v)')
+        self.emit_line('return _bi.str(v)')
+        self.indent -= 1
+        self.emit_line('def info(self, msg):')
+        self.indent += 1
+        self.emit_line('_bi.print(f"\\033[36m[INFO]\\033[0m {self._fmt(msg)}")')
+        self.emit_line('return _Ok(None)')
+        self.indent -= 1
+        self.emit_line('def warn(self, msg):')
+        self.indent += 1
+        self.emit_line('_bi.print(f"\\033[33m[WARN]\\033[0m {self._fmt(msg)}")')
+        self.emit_line('return _Ok(None)')
+        self.indent -= 1
+        self.emit_line('def err(self, msg):')
+        self.indent += 1
+        self.emit_line('_bi.print(f"\\033[31m[ERR]\\033[0m  {self._fmt(msg)}", file=_sys.stderr)')
+        self.emit_line('return _Ok(None)')
+        self.indent -= 2
+        self.emit_line('log = _LogMod()')
+        self.emit_line('')
+        self.emit_line('class _EnvMod:')
+        self.indent += 1
+        self.emit_line('def get(self, key, default=None):')
+        self.indent += 1
+        self.emit_line('return _Ok(_os.environ.get(_bi.str(key), default))')
+        self.indent -= 1
+        self.emit_line('def require(self, key):')
+        self.indent += 1
+        self.emit_line('v = _os.environ.get(_bi.str(key))')
+        self.emit_line('if v is None:')
+        self.indent += 1
+        self.emit_line('return _Err(f"Required env var \'{key}\' not set")')
+        self.indent -= 1
+        self.emit_line('return _Ok(v)')
+        self.indent -= 2
+        self.emit_line('env = _EnvMod()')
+        self.emit_line('')
+        self.emit_line('class _JsonMod:')
+        self.indent += 1
+        self.emit_line('def parse(self, s):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('return _Ok(_json.loads(_bi.str(s)))')
+        self.indent -= 1
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(f"JSON parse error: {e}")')
+        self.indent -= 2
+        self.emit_line('def stringify(self, obj, indent=None):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('return _Ok(_json.dumps(obj, indent=indent, default=_bi.str))')
+        self.indent -= 1
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(f"JSON stringify error: {e}")')
+        self.indent -= 2
+        self.emit_line('def pretty(self, obj):')
+        self.indent += 1
+        self.emit_line('return self.stringify(obj, indent=2)')
+        self.indent -= 2
+        self.emit_line('json = _JsonMod()')
+        self.emit_line('')
+        self.emit_line('class _MathMod:')
+        self.indent += 1
+        self.emit_line('def abs(self, x): return _bi.abs(_bi.float(x))')
+        self.emit_line('def ceil(self, x): return _math.ceil(_bi.float(x))')
+        self.emit_line('def floor(self, x): return _math.floor(_bi.float(x))')
+        self.emit_line('def round(self, x): return _bi.round(_bi.float(x))')
+        self.emit_line('def sqrt(self, x): return _math.sqrt(_bi.float(x))')
+        self.emit_line('def pow(self, x, y): return _bi.float(x) ** _bi.float(y)')
+        self.emit_line('def min(self, *args): return _bi.min([_bi.float(a) for a in args])')
+        self.emit_line('def max(self, *args): return _bi.max([_bi.float(a) for a in args])')
+        self.emit_line('def sin(self, x): return _math.sin(_bi.float(x))')
+        self.emit_line('def cos(self, x): return _math.cos(_bi.float(x))')
+        self.emit_line('def log(self, x): return _math.log(_bi.float(x))')
+        self.emit_line('def pi(self): return _math.pi')
+        self.emit_line('def e(self): return _math.e')
+        self.indent -= 1
+        self.emit_line('math = _MathMod()')
+        self.emit_line('')
+        self.emit_line('class _TimeMod:')
+        self.indent += 1
+        self.emit_line('def now(self): return _Ok(_time.time())')
+        self.emit_line('def sleep(self, ms):')
+        self.indent += 1
+        self.emit_line('_time.sleep(_bi.float(ms) / 1000.0)')
+        self.emit_line('return _Ok(None)')
+        self.indent -= 1
+        self.emit_line('def fmt(self, ts=None, fmt_str="%Y-%m-%d %H:%M:%S"):')
+        self.indent += 1
+        self.emit_line('t = _datetime.datetime.fromtimestamp(_bi.float(ts)) if ts else _datetime.datetime.now()')
+        self.emit_line('return _Ok(t.strftime(_bi.str(fmt_str)))')
+        self.indent -= 1
+        self.emit_line('def date(self):')
+        self.indent += 1
+        self.emit_line('d = _datetime.date.today()')
+        self.emit_line('return _Ok({"year": d.year, "month": d.month, "day": d.day})')
+        self.indent -= 2
+        self.emit_line('time = _TimeMod()')
+        self.emit_line('')
+        self.emit_line('class _StrMod:')
+        self.indent += 1
+        self.emit_line('def join(self, lst, sep=""):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(sep).join(_bi.str(x) for x in lst))')
+        self.indent -= 1
+        self.emit_line('def split(self, s, sep=" "):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(s).split(_bi.str(sep)))')
+        self.indent -= 1
+        self.emit_line('def replace(self, s, old, new):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(s).replace(_bi.str(old), _bi.str(new)))')
+        self.indent -= 1
+        self.emit_line('def contains(self, s, sub):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(sub) in _bi.str(s))')
+        self.indent -= 1
+        self.emit_line('def starts(self, s, prefix):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(s).startswith(_bi.str(prefix)))')
+        self.indent -= 1
+        self.emit_line('def ends(self, s, suffix):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(s).endswith(_bi.str(suffix)))')
+        self.indent -= 1
+        self.emit_line('def trim(self, s):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(s).strip())')
+        self.indent -= 1
+        self.emit_line('def repeat(self, s, n):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(s) * _bi.int(n))')
+        self.indent -= 2
+        self.emit_line('str = _StrMod()')
+        self.emit_line('')
+        self.emit_line('class _CryptoMod:')
+        self.indent += 1
+        self.emit_line('def md5(self, s):')
+        self.indent += 1
+        self.emit_line('return _Ok(_hashlib.md5(_bi.str(s).encode()).hexdigest())')
+        self.indent -= 1
+        self.emit_line('def sha256(self, s):')
+        self.indent += 1
+        self.emit_line('return _Ok(_hashlib.sha256(_bi.str(s).encode()).hexdigest())')
+        self.indent -= 1
+        self.emit_line('def base64_encode(self, s):')
+        self.indent += 1
+        self.emit_line('return _Ok(_base64.b64encode(_bi.str(s).encode()).decode())')
+        self.indent -= 1
+        self.emit_line('def base64_decode(self, s):')
+        self.indent += 1
+        self.emit_line('try:')
+        self.indent += 1
+        self.emit_line('return _Ok(_base64.b64decode(_bi.str(s)).decode())')
+        self.indent -= 1
+        self.emit_line('except Exception as e:')
+        self.indent += 1
+        self.emit_line('return _Err(f"base64 decode error: {e}")')
+        self.indent -= 2
+        self.emit_line('def uuid(self):')
+        self.indent += 1
+        self.emit_line('return _Ok(_bi.str(_uuid.uuid4()))')
+        self.indent -= 2
+        self.emit_line('crypto = _CryptoMod()')
+        self.emit_line('')
+        self.emit_line('class _DbMod:')
+        self.indent += 1
+        self.emit_line('def q(self, table, where=None):')
+        self.indent += 1
+        self.emit_line('_bi.print(f"[karn:db] Query: {table} WHERE {where}")')
+        self.emit_line('return _Ok([])')
+        self.indent -= 1
+        self.emit_line('def exec(self, sql, *args):')
+        self.indent += 1
+        self.emit_line('_bi.print(f"[karn:db] Exec: {sql} args={args}")')
+        self.emit_line('return _Ok({"rows_affected": 0})')
+        self.indent -= 2
+        self.emit_line('db = _DbMod()')
+        self.emit_line('')
+        self.emit_line('def _kprint(*args):')
+        self.indent += 1
+        self.emit_line('_bi.print(*[_bi.str(a) for a in args])')
+        self.emit_line('return _Ok(None)')
+        self.indent -= 1
+        self.emit_line('print = _kprint')
+        self.emit_line('def _safeint(x):')
+        self.indent += 1
+        self.emit_line('try: return _bi.int(x)')
+        self.emit_line('except Exception as e: return _Err(_bi.str(e))')
+        self.indent -= 1
+        self.emit_line('int = _safeint')
+        self.emit_line('def _safefloat(x):')
+        self.indent += 1
+        self.emit_line('try: return _bi.float(x)')
+        self.emit_line('except Exception as e: return _Err(_bi.str(e))')
+        self.indent -= 1
+        self.emit_line('float = _safefloat')
+        self.emit_line('def _safelen(x):')
+        self.indent += 1
+        self.emit_line('try: return _bi.len(x)')
+        self.emit_line('except Exception as e: return _Err(_bi.str(e))')
+        self.indent -= 1
+        self.emit_line('len = _safelen')
+        self.emit_line('def _kkeys(x):')
+        self.indent += 1
+        self.emit_line('return _bi.list(x.keys()) if _bi.isinstance(x, _bi.dict) else []')
+        self.indent -= 1
+        self.emit_line('keys = _kkeys')
+        self.emit_line('def _kvalues(x):')
+        self.indent += 1
+        self.emit_line('return _bi.list(x.values()) if _bi.isinstance(x, _bi.dict) else []')
+        self.indent -= 1
+        self.emit_line('values = _kvalues')
+        self.emit_line('def _krange(s, e=None):')
+        self.indent += 1
+        self.emit_line('s = _bi.int(s)')
+        self.emit_line('if e is None: return _bi.list(_bi.range(s))')
+        self.emit_line('return _bi.list(_bi.range(s, _bi.int(e)))')
+        self.indent -= 1
+        self.emit_line('range = _krange')
+        self.emit_line('def _ktypeof(x):')
+        self.indent += 1
+        self.emit_line("if _bi.isinstance(x, _Ok): return 'Ok'")
+        self.emit_line("if _bi.isinstance(x, _Err): return 'Err'")
+        self.emit_line('return _bi.type(x).__name__')
+        self.indent -= 1
+        self.emit_line('type_of = _ktypeof')
+        self.emit_line('def _kzip(a, b):')
+        self.indent += 1
+        self.emit_line('return _bi.list(_bi.zip(a, b))')
+        self.indent -= 1
+        self.emit_line('zip = _kzip')
+        self.emit_line('def _kreversed(x):')
+        self.indent += 1
+        self.emit_line('return _bi.list(_bi.reversed(x))')
+        self.indent -= 1
+        self.emit_line('reversed = _kreversed')
+        self.emit_line('')
 
     def gen_stmt(self, node: Node):
         t = type(node)
@@ -2074,20 +2607,30 @@ class CodeGen:
             if node.ecosystem == 'pip':
                 self.emit_line(f'import {node.package} as {node.alias}')
 
+        elif t == MatchExpr:
+            # Statement-level match: Emit arms print (top level only),
+            # matching interpreter semantics for the common cases.
+            self.emit_line(self._gen_match_py(node, stmt_mode=(self.indent == 0)))
+
         else:
             expr = self.gen_expr(node)
             if expr:
                 self.emit_line(expr)
 
     def gen_fn(self, node: FnDef):
-        params = ', '.join(p for p, _ in node.params)
+        params = ', '.join(self._pyname(p) for p, _ in node.params)
         name = self._pyname(node.name or '_lambda')
         self.emit_line(f'def {name}({params}):')
         self.indent += 1
         if not node.body:
             self.emit_line('pass')
-        for stmt in node.body:
-            self.gen_stmt(stmt)
+        for i, stmt in enumerate(node.body):
+            if isinstance(stmt, Emit):
+                self.emit_line(f'return {self.gen_expr(stmt.value)}')
+            elif i == len(node.body) - 1 and isinstance(stmt, _PY_AUTO_RETURN_TYPES):
+                self.emit_line(f'return {self.gen_expr(stmt)}')
+            else:
+                self.gen_stmt(stmt)
         self.indent -= 1
         self.emit_line('')
 
@@ -2101,7 +2644,9 @@ class CodeGen:
         if t == Ident:      return self._pyname(node.name)
 
         if t == ListLit:
-            items = ', '.join(self.gen_expr(i) for i in node.items)
+            items = ', '.join(
+                f'*{self.gen_expr(i.expr)}' if isinstance(i, Spread) else self.gen_expr(i)
+                for i in node.items)
             return f'[{items}]'
 
         if t == MapLit:
@@ -2109,6 +2654,10 @@ class CodeGen:
             for k, v in node.pairs:
                 if isinstance(k, Spread):
                     pairs.append(f'**{self.gen_expr(k.expr)}')
+                elif isinstance(k, Ident):
+                    # Bare identifier keys are strings: {x:1} → {"x":1},
+                    # mirroring the interpreter.
+                    pairs.append(f'{k.name!r}: {self.gen_expr(v)}')
                 else:
                     pairs.append(f'{self.gen_expr(k)}: {self.gen_expr(v)}')
             return '{' + ', '.join(pairs) + '}'
@@ -2119,7 +2668,10 @@ class CodeGen:
             return f'({l} {node.op} {r})'
 
         if t == GetAttr:
-            return f'{self.gen_expr(node.obj)}.{node.attr}'
+            # Route through _getattr so dict-key access and list/str
+            # methods work like the interpreter (plain .attr would
+            # AttributeError on dicts/lists/strings).
+            return f'_getattr({self.gen_expr(node.obj)}, {node.attr!r})'
 
         if t == Call:
             fn   = self.gen_expr(node.callee)
@@ -2161,12 +2713,13 @@ class CodeGen:
             return f'return {self.gen_expr(node.value)}'
 
         if t == FnDef:
-            params = ', '.join(p for p, _ in node.params)
+            params = ', '.join(self._pyname(p) for p, _ in node.params)
             # Inline lambda for simple single-expression bodies
             if len(node.body) == 1 and isinstance(node.body[0], Emit):
                 body = self.gen_expr(node.body[0].value)
                 return f'(lambda {params}: {body})'
-            return f'(lambda {params}: None)'  # complex bodies need def
+            raise CodegenError(
+                "Multi-statement lambda cannot be inlined in python target")
 
         if t == RangeExpr:
             s = self.gen_expr(node.start)
@@ -2174,15 +2727,65 @@ class CodeGen:
             return f'list(range({s}, {e}+1))'
 
         if t == MatchExpr:
-            subj = self.gen_expr(node.subject)
-            arms = []
-            for pat, body in node.arms:
-                arms.append(f'    # arm: {pat}')
-            return f'None  # match on {subj}'
+            return self._gen_match_py(node)
 
-        return 'None'
+        if t == Index:
+            return f'_idx({self.gen_expr(node.obj)}, {self.gen_expr(node.index)})'
 
-    def _pyname(self, name: str) -> str:
+        if t == RetryExpr:
+            return f'_retry(lambda: {self.gen_expr(node.expr)}, {self.gen_expr(node.n)})'
+
+        if t == TimeoutExpr:
+            # Timeout is not enforceable in portable Python — evaluate inner
+            # expression (same documented limitation as the interpreter).
+            return self.gen_expr(node.expr)
+
+        raise CodegenError(
+            f"Cannot emit {t.__name__} for target '{self.target}'")
+
+    def _gen_match_py(self, node: MatchExpr, stmt_mode=False) -> str:
+        """Emit match as a _match() call with per-arm lambdas.
+
+        stmt_mode=True (top-level statement): Emit arms print via _emit,
+        mirroring the interpreter where a top-level ! prints. Otherwise
+        Emit arms unwrap to their value (function return position).
+        """
+        arms = []
+        for pat, body in node.arms:
+            is_emit = isinstance(body, Emit)
+            if isinstance(body, MatchExpr):
+                src = self._gen_match_py(body, stmt_mode=stmt_mode)
+            else:
+                src = self.gen_expr(body.value if is_emit else body)
+            if is_emit and stmt_mode:
+                src = f'_emit({src})'
+            if isinstance(pat, Call) and isinstance(pat.callee, Ident) \
+                    and pat.callee.name in ('Ok', 'Err'):
+                kind = pat.callee.name.lower()
+                if pat.args and isinstance(pat.args[0], Ident):
+                    bind = self._pyname(pat.args[0].name)
+                    arms.append(f"('{kind}', True, lambda {bind}: {src})")
+                else:
+                    arms.append(f"('{kind}', False, lambda _m: {src})")
+            elif isinstance(pat, Ident):
+                if pat.name == '_':
+                    arms.append(f"('wild', False, lambda _m: {src})")
+                elif pat.name in ('Ok', 'Err'):
+                    arms.append(f"('{pat.name.lower()}', False, lambda _m: {src})")
+                else:
+                    arms.append(f"('cap', False, lambda {self._pyname(pat.name)}: {src})")
+            elif isinstance(pat, NilLit):
+                arms.append(f"('lit', None, lambda _m: {src})")
+            elif isinstance(pat, (NumberLit, StringLit, BoolLit)):
+                arms.append(f"('lit', {self.gen_expr(pat)}, lambda _m: {src})")
+            else:
+                raise CodegenError(
+                    f"Match pattern {type(pat).__name__} not supported "
+                    f"for target '{self.target}'")
+        return f'_match({self.gen_expr(node.subject)}, [{", ".join(arms)}])'
+
+    @staticmethod
+    def _pyname(name: str) -> str:
         reserved = {'type', 'from', 'as', 'match', 'trait', 'import',
                     'class', 'def', 'return', 'print', 'input', 'list'}
         if name in reserved:
@@ -2603,11 +3206,15 @@ class JSCodeGen:
             if isinstance(node.callee, Ident) and node.callee.name == 'Err':
                 args = ', '.join(self.gen_expr(a) for a in node.args)
                 return f'new _Err({args})'
+            if node.kwargs:
+                # `f(x: 1)` would emit `f(x: 1)` — a JS SyntaxError.
+                # Fail loudly instead of shipping broken code.
+                raise CodegenError(
+                    "Keyword arguments are not supported in js target — "
+                    "use positional args")
             fn = self.gen_expr(node.callee)
             args = ', '.join(self.gen_expr(a) for a in node.args)
-            kw = ', '.join(f'{k}: {self.gen_expr(v)}' for k, v in node.kwargs.items())
-            all_args = ', '.join(filter(None, [args, kw]))
-            return f'{fn}({all_args})'
+            return f'{fn}({args})'
 
         if t == Propagate:
             return f'_prop({self.gen_expr(node.expr)})'
@@ -2819,6 +3426,56 @@ const char* _val_to_str(Val v){
     if(v.type==VAL_NUM){ snprintf(buf,sizeof(buf),"%g",v.as.num); return buf; }
     if(v.type==VAL_BOOL){ return v.as.b?"true":"false"; }
     return "nil";
+}
+
+/* ── Structural equality (mirrors interpreter == semantics) ── */
+bool _val_eq(Val a, Val b){
+    if(a.type==VAL_STR && b.type==VAL_STR) return strcmp(a.as.str,b.as.str)==0;
+    if(a.type==VAL_NUM && b.type==VAL_NUM) return a.as.num==b.as.num;
+    if(a.type==VAL_BOOL && b.type==VAL_BOOL) return a.as.b==b.as.b;
+    if(a.type==VAL_NIL && b.type==VAL_NIL) return true;
+    if((a.type==VAL_NUM||a.type==VAL_BOOL) && (b.type==VAL_NUM||b.type==VAL_BOOL)){
+        double x=a.type==VAL_NUM?a.as.num:(a.as.b?1:0);
+        double y=b.type==VAL_NUM?b.as.num:(b.as.b?1:0);
+        return x==y;
+    }
+    if(a.type==VAL_OK && b.type==VAL_OK) return a.as.ok_val==b.as.ok_val;
+    if(a.type==VAL_ERR && b.type==VAL_ERR) return a.as.err_msg==b.as.err_msg;
+    if(a.type==VAL_ARR && b.type==VAL_ARR){
+        if(a.as.arr->len!=b.as.arr->len) return false;
+        for(int i=0;i<a.as.arr->len;i++)
+            if(!_val_eq(a.as.arr->items[i],b.as.arr->items[i])) return false;
+        return true;
+    }
+    if(a.type==VAL_MAP && b.type==VAL_MAP){
+        if(a.as.map->len!=b.as.map->len) return false;
+        for(int i=0;i<a.as.map->len;i++){
+            Val k=a.as.map->keys[i]; bool found=false; Val v=val_nil();
+            for(int j=0;j<b.as.map->len;j++){
+                if(_val_eq(k,b.as.map->keys[j])){ found=true; v=b.as.map->vals[j]; break; }
+            }
+            if(!found) return false;
+            if(!_val_eq(a.as.map->vals[i],v)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+Val karn_eq(Val a, Val b){ return val_bool(_val_eq(a,b)); }
+
+/* ── Ordering: -1/0/1, *ok=0 when incomparable (mixed types).
+   The interpreter raises on mixed-type ordering; C Val-returning
+   codegen has no raise mechanism, so those yield false (documented). ── */
+int _val_cmp(Val a, Val b, int *ok){
+    *ok=1;
+    if(a.type==VAL_NUM && b.type==VAL_NUM){
+        if(a.as.num<b.as.num) return -1;
+        return (a.as.num>b.as.num)?1:0;
+    }
+    if(a.type==VAL_STR && b.type==VAL_STR) return strcmp(a.as.str,b.as.str);
+    if(a.type==VAL_BOOL && b.type==VAL_BOOL) return (a.as.b>b.as.b)-(a.as.b<b.as.b);
+    if(a.type==VAL_NIL && b.type==VAL_NIL) return 0;
+    *ok=0; return 0;
 }
 
 /* ── Error propagation ── */
@@ -3196,12 +3853,12 @@ class CCodeGen:
                 '*':  lambda a,b: f'val_num(_val_to_num({a}) * _val_to_num({b}))',
                 '/':  lambda a,b: f'val_num(_val_to_num({a}) / _val_to_num({b}))',
                 '%':  lambda a,b: f'val_num(fmod(_val_to_num({a}), _val_to_num({b})))',
-                '<':  lambda a,b: f'val_bool(_val_to_num({a}) < _val_to_num({b}))',
-                '>':  lambda a,b: f'val_bool(_val_to_num({a}) > _val_to_num({b}))',
-                '<=': lambda a,b: f'val_bool(_val_to_num({a}) <= _val_to_num({b}))',
-                '>=': lambda a,b: f'val_bool(_val_to_num({a}) >= _val_to_num({b}))',
-                '==': lambda a,b: f'val_bool(_val_to_num({a}) == _val_to_num({b}))',
-                '!=': lambda a,b: f'val_bool(_val_to_num({a}) != _val_to_num({b}))',
+                '<':  lambda a,b: f'({{ int _ok=0; int _c=_val_cmp({a},{b},&_ok); val_bool(_ok && _c<0); }})',
+                '>':  lambda a,b: f'({{ int _ok=0; int _c=_val_cmp({a},{b},&_ok); val_bool(_ok && _c>0); }})',
+                '<=': lambda a,b: f'({{ int _ok=0; int _c=_val_cmp({a},{b},&_ok); val_bool(_ok && _c<=0); }})',
+                '>=': lambda a,b: f'({{ int _ok=0; int _c=_val_cmp({a},{b},&_ok); val_bool(_ok && _c>=0); }})',
+                '==': lambda a,b: f'karn_eq({a}, {b})',
+                '!=': lambda a,b: f'val_bool(!_val_eq({a}, {b}))',
             }
             return ops.get(node.op, lambda a,b: 'val_nil()')(l, r)
 
@@ -3509,27 +4166,37 @@ def compile_file(source: str, path: str, target: str) -> str:
         gen = JSCodeGen(target=target)
     elif target in ('c', 'wasm32', 'linux-x64', 'linux-arm64', 'macos-arm64', 'windows-x64'):
         gen = CCodeGen(target=target)
-    else:
+    elif target == 'python':
         gen = CodeGen(target=target)
+    else:
+        raise CodegenError(f"Unknown target '{target}'")
     return gen.generate(ast)
 
 
 def run_file(source: str, path: str, jit=False):
-    tokens  = Lexer(source).tokenize()
-    ast     = Parser(tokens).parse()
+    try:
+        tokens  = Lexer(source).tokenize()
+        ast     = Parser(tokens).parse()
+    except (LexError, ParseError) as e:
+        print(f'\033[31m✗\033[0m {e}')
+        sys.exit(1)
     interp  = Interpreter()
     interp.jit_mode = jit
     try:
         interp.run(ast)
     except EmitSignal as e:
         print(e.value)
+        if isinstance(e.value, KarnError):
+            # An unhandled error value reached the top level
+            # (e.g. via ? propagation) — that's a failure, not output.
+            sys.exit(1)
     except KarnError as e:
         print(f'\033[31m{e!r}\033[0m', file=sys.stderr)
         sys.exit(1)
 
 
 def check_file(source: str, path: str):
-    """Parse + type-check only, no execution."""
+    """Parse only, no execution (syntax check — no type checking yet)."""
     try:
         tokens = Lexer(source).tokenize()
         ast    = Parser(tokens).parse()
@@ -3565,14 +4232,13 @@ def main():
     p_build.add_argument('file')
     p_build.add_argument('--target', default='python',
                          choices=['python','js','web','c','linux-x64','linux-arm64','macos-arm64',
-                                  'windows-x64','wasm32','ios','android',
-                                  'lambda','edge','embed','docker'],
+                                  'windows-x64','wasm32'],
                          help='Compilation target (default: python)')
     p_build.add_argument('--out', '-o', default=None, help='Output file path')
 
     p_repl = sub.add_parser('repl', help='Start interactive REPL')
 
-    p_check = sub.add_parser('check', help='Type-check without running')
+    p_check = sub.add_parser('check', help='Parse files without running (syntax check)')
     p_check.add_argument('files', nargs='+')
 
     args = parser.parse_args()
@@ -3597,7 +4263,11 @@ def main():
 
         native_targets = {'linux-x64', 'linux-arm64', 'macos-arm64', 'windows-x64', 'wasm32'}
 
-        out = compile_file(source, args.file, target)
+        try:
+            out = compile_file(source, args.file, target)
+        except (LexError, ParseError, CodegenError) as e:
+            print(f'\033[31m✗\033[0m {e}')
+            sys.exit(1)
         if target in ('js', 'web'):
             ext = 'html' if target == 'web' else 'js'
             out_path = args.out or args.file.replace('.kn', f'.{ext}')
@@ -3620,11 +4290,13 @@ def main():
 
             if target == 'wasm32':
                 out_path = args.out or args.file.replace('.kn', '.wasm')
-                cc = 'emcc' if shutil.which('emcc') else 'clang'
-                if cc == 'emcc':
-                    cmd = [cc, c_path, '-o', out_path, '-lm']
-                else:
-                    cmd = [cc, '--target=wasm32', '-nostdlib', c_path, '-o', out_path, '-lm']
+                # The generated C needs a libc (printf/malloc) — only emcc
+                # provides that for wasm; a bare clang --target=wasm32
+                # -nostdlib invocation cannot link it.
+                if not shutil.which('emcc'):
+                    print(f'\033[31m✗\033[0m emcc not found — required for target wasm32')
+                    sys.exit(1)
+                cmd = ['emcc', c_path, '-o', out_path, '-lm']
             else:
                 out_path = args.out or args.file.replace('.kn', '')
                 cc = 'gcc' if shutil.which('gcc') else 'cc'
@@ -3657,12 +4329,17 @@ def main():
                 print(f'\033[31m✗\033[0m Compilation timed out')
                 sys.exit(1)
 
-        else:
-            out_path = args.out or args.file.replace('.kn', f'.{target}.py')
+        elif target == 'python':
+            out_path = args.out or args.file.replace('.kn', '.python.py')
             open(out_path, 'w').write(out)
             size = os.path.getsize(out_path)
             print(f'\033[32m✓\033[0m Compiled \033[33m{args.file}\033[0m → '
                   f'\033[33m{out_path}\033[0m ({size} bytes, target: {target})')
+
+        else:
+            # Unreachable via argparse choices; guards programmatic use.
+            print(f'\033[31m✗\033[0m Unknown target: {target}', file=sys.stderr)
+            sys.exit(1)
 
     elif args.cmd == 'check':
         for f in args.files:

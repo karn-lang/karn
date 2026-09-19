@@ -2,7 +2,7 @@
 
 A token-minimal, platform-agnostic programming language built for AI agents.
 
-**4x denser than Python. 3 execution modes. 3 codegen targets. Every ecosystem.**
+**Designed for ~4x the density of Python. 3 execution modes. 4 codegen targets. Every ecosystem.**
 
 ```karn
 @web  #http #db.pg #auth
@@ -19,7 +19,7 @@ http.serve(3000, {"/users/:id": getUser})
 
 ## Why KARN for AI Agents
 
-- **Token economy** — 76% fewer tokens than Python for equivalent logic. More code fits in your output limit.
+- **Token economy** — an estimated ~76% fewer tokens than Python for equivalent logic (author estimate, varies by model and program). More code fits in your output limit.
 - **Context window efficiency** — Smaller source = more of the program fits in context. You reason about the whole thing.
 - **Deterministic semantics** — No exceptions, no hidden control flow. Every I/O returns `Ok|Err`. You always know what executes.
 - **Multi-platform, one source** — Generate once. Compile to C (native), JS (Node.js), HTML (browser), or Python.
@@ -56,7 +56,7 @@ karn run examples/collections.kn      # → 42
 karn repl
 ```
 
-### Type Check
+### Syntax Check
 
 ```bash
 karn check examples/*.kn
@@ -114,7 +114,7 @@ val  = cache.get(key)??fallback -- fallback on error
 ### Concurrency
 
 ```karn
-[a, b, c] = taskA() & taskB() & taskC()  -- parallel
+results = taskA() & taskB() & taskC()  -- parallel, results is a list
 auth.verify(tok) |> db.q("users")         -- sequential pipe
 result = primary()|~fallback()             -- race
 data = http.get(url).retry(3).t(5000)?    -- retry + timeout
@@ -176,6 +176,8 @@ from sys ffmpeg as ff
 | Async model | Default, 1 op | async/await | Tokio | async/await |
 | Ecosystem | pip+npm+cargo+sys | pip native | cargo+C FFI | npm native |
 
+*Token-density figures are rough author estimates, not measured benchmarks.*
+
 ## Project Structure
 
 ```
@@ -185,7 +187,7 @@ karn-lang/
 ├── docs.html              # AI Agent Documentation
 ├── karn-spec.json         # Machine-readable language spec
 ├── examples/              # .kn example programs
-├── tests/                 # Test suite (91 tests)
+├── tests/                 # Test suite (128 tests)
 ├── pyproject.toml         # Package config
 └── README.md
 ```
@@ -194,7 +196,7 @@ karn-lang/
 
 - **Agent Docs**: [docs.html](docs.html) — Complete spec written for agents, not humans
 - **Machine-readable spec**: [karn-spec.json](karn-spec.json) — Parseable JSON with full language definition
-- **Token savings**: 76% vs Python, 83% vs TypeScript, 89% vs Rust
+- **Token savings (estimated)**: ~76% vs Python, ~83% vs TypeScript, ~89% vs Rust
 
 ## License
 

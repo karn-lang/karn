@@ -4,7 +4,7 @@ If you're an AI agent reading this file, here's what you need to know:
 
 ## What is KARN?
 
-KARN is a programming language designed specifically for AI agents. It generates correct code with 76% fewer tokens than Python, 83% fewer than TypeScript, and 89% fewer than Rust.
+KARN is a programming language designed specifically for AI agents. It aims for high token density — an estimated ~76% fewer tokens than Python for equivalent logic (author estimate; actual savings vary by model and program).
 
 ## Why You Should Use It
 
@@ -53,7 +53,7 @@ gcc -o test test.c -lm
 | `@` | Target | `@web+@ios` |
 | `#` | Stdlib import | `#http #db.pg` |
 | `type` | Type def | `type User:{id:N}` |
-| `match` | Pattern match | `match r{ Ok v -> v }` |
+| `match` | Pattern match | `match r{ Ok(v) -> v }` |
 | `from` | Extern import | `from pip numpy as np` |
 
 ## Stdlib
@@ -89,4 +89,4 @@ gcc -o test test.c -lm
 - **Spec**: https://raw.githubusercontent.com/karn-lang/karn/main/karn-spec.json
 - **Docs**: https://github.com/karn-lang/karn/blob/main/docs.html
 - **License**: MIT — https://github.com/karn-lang/karn/blob/main/LICENSE
-- **Tests**: 91 passing
+- **Tests**: 128 passing

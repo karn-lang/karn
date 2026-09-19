@@ -178,8 +178,8 @@ td code { font-size: 12px; }
         </div>
       </div>
 
-      <h2>Token Economy: Real Numbers</h2>
-      <p>Same program — a REST API with auth, DB query, and JSON response:</p>
+      <h2>Token Economy: Estimates</h2>
+      <p>Same program — a REST API with auth, DB query, and JSON response. Figures below are rough author estimates, not measured benchmarks; actual savings vary by model and program:</p>
       <div class="token-compare">
         <div class="token-box">
           <div class="lang">KARN</div>
@@ -198,7 +198,7 @@ td code { font-size: 12px; }
           <div class="count muted">~412 tokens</div>
         </div>
       </div>
-      <p>That's <strong>76% fewer tokens</strong> than Python, <strong>83% fewer</strong> than TypeScript. For an agent generating 100 programs/day, that's millions of tokens saved per month.</p>
+      <p>That's an estimated <strong>~76% fewer tokens</strong> than Python, <strong>~83% fewer</strong> than TypeScript. For an agent generating 100 programs/day, that could be millions of tokens saved per month.</p>
     </section>
 
     <!-- TOKEN REFERENCE -->
@@ -214,7 +214,7 @@ td code { font-size: 12px; }
           <tr><td><code>~</code></td><td>Mutate</td><td>Mutable bind</td><td><code>~count = 0</code></td></tr>
           <tr><td><code>?</code></td><td>Propagate</td><td>Unwrap Ok, propagate Err</td><td><code>data = http.get(url)?</code></td></tr>
           <tr><td><code>??</code></td><td>Fallback</td><td>Use default on Err</td><td><code>cache.get(k)??default</code></td></tr>
-          <tr><td><code>&</code></td><td>Parallel</td><td>Concurrent execution</td><td><code>a() & b() & c()</code></td></tr>
+          <tr><td><code>&</code></td><td>Parallel</td><td>Run all, collect results (sequential in interpreter)</td><td><code>a() & b() & c()</code></td></tr>
           <tr><td><code>|&gt;</code></td><td>Pipe Forward</td><td>Sequential value passing</td><td><code>auth.verify(tok) |> db.q()</code></td></tr>
           <tr><td><code>|~</code></td><td>Race</td><td>First success wins</td><td><code>primary()|~fallback()</code></td></tr>
           <tr><td><code>*</code></td><td>Map</td><td>Transform collection</td><td><code>items*(x->x*2)</code></td></tr>
@@ -223,7 +223,7 @@ td code { font-size: 12px; }
           <tr><td><code>@</code></td><td>Target</td><td>Platform declaration</td><td><code>@web+@ios</code></td></tr>
           <tr><td><code>#</code></td><td>Import</td><td>Stdlib import</td><td><code>#http #db.pg</code></td></tr>
           <tr><td><code>type</code></td><td>Type Def</td><td>Named type declaration</td><td><code>type User:{id:N}</code></td></tr>
-          <tr><td><code>match</code></td><td>Pattern Match</td><td>Structural dispatch</td><td><code>match r{ Ok v -> v }</code></td></tr>
+          <tr><td><code>match</code></td><td>Pattern Match</td><td>Structural dispatch</td><td><code>match r{ Ok(v) -> v }</code></td></tr>
           <tr><td><code>from</code></td><td>Extern Import</td><td>Ecosystem interop</td><td><code>from pip numpy as np</code></td></tr>
         </tbody>
       </table>
@@ -270,25 +270,25 @@ val <span class="k">=</span> cache.<span class="f">get</span>(key)<span class="k
     <!-- CONCURRENCY -->
     <section id="concurrency">
       <h2>Concurrency</h2>
-      <p>All I/O is concurrent by default. Three operators cover every pattern.</p>
+      <p>Three operators cover every pattern. The interpreter evaluates branches sequentially; backends may parallelize.</p>
       <table>
         <thead><tr><th>Operator</th><th>Semantics</th><th>Use Case</th></tr></thead>
         <tbody>
-          <tr><td><code>&</code></td><td>Parallel — all execute concurrently, collect results</td><td>Multiple independent I/O calls</td></tr>
-          <tr><td><code>|&gt;</code></td><td>Pipe forward — pass result to next function</td><td>Sequential data transformations</td></tr>
-          <tr><td><code>|~</code></td><td>Race — first success wins, others cancelled</td><td>Redundant endpoints, fallbacks</td></tr>
+          <tr><td><code>&</code></td><td>Parallel — run all branches, collect results into a list</td><td>Multiple independent I/O calls</td></tr>
+          <tr><td><code>|&gt;</code></td><td>Pipe forward — pass result to next function (use a bare function: <code>x |&gt; f</code>, not <code>x |&gt; f(a)</code>)</td><td>Sequential data transformations</td></tr>
+          <tr><td><code>|~</code></td><td>Race — try left; on error, fall back to right</td><td>Redundant endpoints, fallbacks</td></tr>
         </tbody>
       </table>
-      <pre><code><span class="c">-- Parallel</span>
-[a, b, c] <span class="k">=</span> fetchA() <span class="k">&amp;</span> fetchB() <span class="k">&amp;</span> fetchC()
+      <pre><code><span class="c">-- Parallel (results is a list)</span>
+results <span class="k">=</span> fetchA() <span class="k">&amp;</span> fetchB() <span class="k">&amp;</span> fetchC()
 
-<span class="c">-- Sequential pipe</span>
-auth.<span class="f">verify</span>(tok) <span class="k">|&gt;</span> db.<span class="f">q</span>(<span class="s">"users"</span>) <span class="k">|&gt;</span> log.<span class="f">info</span>
+<span class="c">-- Sequential pipe (bare function stage)</span>
+tok <span class="k">|&gt;</span> getUser <span class="k">|&gt;</span> log.<span class="f">info</span>
 
-<span class="c">-- Race</span>
+<span class="c">-- Race (sequential fallback)</span>
 result <span class="k">=</span> primary()<span class="k">|~</span>fallback()
 
-<span class="c">-- Retry + timeout (built into every async op)</span>
+<span class="c">-- Retry + timeout decorators (.t() is a no-op in the interpreter)</span>
 data <span class="k">=</span> http.<span class="f">get</span>(url).<span class="f">retry</span>(<span class="n">3</span>).<span class="f">t</span>(<span class="n">5000</span>)<span class="k">?</span></code></pre>
     </section>
 

@@ -2,7 +2,14 @@
 # DO NOT EDIT — edit the .kn source instead
 
 from __future__ import annotations
-import sys, os, json, time
+import builtins as _bi
+import sys as _sys, os as _os, json as _json, time as _time
+import urllib.request as _urlreq
+import math as _math
+import hashlib as _hashlib
+import base64 as _base64
+import uuid as _uuid
+import datetime as _datetime
 
 class _Ok:
     def __init__(self, v): self.v = v
@@ -11,16 +18,281 @@ class _Ok:
 class _Err(Exception):
     def __init__(self, msg, ctx=None): self.msg=msg; self.ctx=ctx or []
     def __repr__(self): return f"Err({self.msg!r})"
+    def __str__(self): return self.msg
 
 def _prop(v):
-    if isinstance(v, _Err): raise v
-    if isinstance(v, _Ok): return v.v
+    if _bi.isinstance(v, _Err): raise v
+    if _bi.isinstance(v, _Ok): return v.v
     return v
+
+def Ok(v):
+    return _Ok(v)
+def Err(m):
+    return _Err(str(m))
+
+def _match(subj, arms):
+    for kind, val, fn in arms:
+        if kind == 'ok':
+            if _bi.isinstance(subj, _Ok): return fn(subj.v) if val else fn(subj)
+        elif kind == 'err':
+            if _bi.isinstance(subj, _Err): return fn(subj)
+        elif kind == 'lit':
+            if subj == val: return fn(subj)
+        elif kind in ('cap', 'wild'):
+            return fn(subj)
+    return None
+
+def _idx(o, i):
+    try:
+        if _bi.isinstance(o, (_bi.list, _bi.str)): return o[_bi.int(i)]
+        if _bi.isinstance(o, _bi.dict): return o[i]
+        raise _Err(f"Cannot index {_bi.type(o).__name__}")
+    except _Err as e:
+        return e
+    except Exception as e:
+        return _Err(_bi.str(e))
+
+def _retry(fn, n):
+    _v = None
+    for _i in _bi.range(_bi.int(n)):
+        _v = fn()
+        if not _bi.isinstance(_v, _Err): return _v
+        if _i < _bi.int(n) - 1: _time.sleep(0.1 * (2 ** _i))
+    return _v
+
+def _emit(v):
+    _bi.print(v)
+    return v
+
+def _ktruthy(v):
+    if v is None or v is False: return False
+    if _bi.isinstance(v, (_bi.int, _bi.float)): return v != 0
+    if _bi.isinstance(v, _bi.str): return _bi.len(v) > 0
+    if _bi.isinstance(v, _bi.list): return _bi.len(v) > 0
+    if _bi.isinstance(v, _Err): return False
+    return True
+
+def _getattr(o, name):
+    if _bi.isinstance(o, (_Ok, _Err)):
+        return _Err(f"Cannot get '{name}' from {'Ok' if _bi.isinstance(o, _Ok) else 'Err'}")
+    if _bi.isinstance(o, _bi.dict):
+        if name in o: return o[name]
+        return _Err(f"Map has no key '{name}'")
+    if _bi.isinstance(o, _bi.list):
+        if name == 'len': return lambda: _bi.len(o)
+        if name == 'first': return lambda: o[0] if o else None
+        if name == 'last': return lambda: o[-1] if o else None
+        if name == 'append': return lambda x: [*o, x]
+        if name == 'map': return lambda f: [f(_i) for _i in o]
+        if name == 'filter': return lambda f: [_i for _i in o if _ktruthy(f(_i))]
+        if name == 'join': return lambda s='': s.join(_bi.str(_i) for _i in o)
+        return _Err(f"List has no method '{name}'")
+    if _bi.isinstance(o, _bi.str):
+        if name == 'len': return lambda: _bi.len(o)
+        if name == 'upper': return lambda: o.upper()
+        if name == 'lower': return lambda: o.lower()
+        if name == 'trim': return lambda: o.strip()
+        if name == 'split': return lambda s=' ': o.split(s)
+        if name == 'hash': return lambda: _bi.hash(o)
+        if name == 'contains': return lambda s: s in o
+        return _Err(f"String has no method '{name}'")
+    try:
+        return _bi.getattr(o, name)
+    except Exception:
+        return _Err(f"Cannot get '{name}' from {_bi.type(o).__name__}")
+
+class _HttpMod:
+    def get(self, url, **kw):
+        try:
+            with _urlreq.urlopen(_bi.str(url), timeout=kw.get('timeout', 10)) as r:
+                return _Ok(r.read().decode())
+        except Exception as e:
+            return _Err(_bi.str(e))
+    def serve(self, port, routes):
+        _bi.print(f"[karn:http] Serving on port {port}")
+        _bi.print(f"[karn:http] Routes: {routes}")
+        return _Ok(None)
+    def ws(self, url):
+        return _Ok({"url": url, "_type": "ws"})
+http = _HttpMod()
+
+class _FsMod:
+    def read(self, path):
+        try:
+            with _bi.open(_bi.str(path)) as f:
+                return _Ok(f.read())
+        except Exception as e:
+            return _Err(_bi.str(e))
+    def write(self, path, content):
+        try:
+            with _bi.open(_bi.str(path), 'w') as f:
+                f.write(_bi.str(content))
+            return _Ok(None)
+        except Exception as e:
+            return _Err(_bi.str(e))
+    def list(self, path='.'):
+        try:
+            return _Ok(_os.listdir(_bi.str(path)))
+        except Exception as e:
+            return _Err(_bi.str(e))
+fs = _FsMod()
+
+class _LogMod:
+    def _fmt(self, v):
+        if _bi.isinstance(v, _bi.dict): return _json.dumps(v)
+        return _bi.str(v)
+    def info(self, msg):
+        _bi.print(f"\033[36m[INFO]\033[0m {self._fmt(msg)}")
+        return _Ok(None)
+    def warn(self, msg):
+        _bi.print(f"\033[33m[WARN]\033[0m {self._fmt(msg)}")
+        return _Ok(None)
+    def err(self, msg):
+        _bi.print(f"\033[31m[ERR]\033[0m  {self._fmt(msg)}", file=_sys.stderr)
+        return _Ok(None)
+log = _LogMod()
+
+class _EnvMod:
+    def get(self, key, default=None):
+        return _Ok(_os.environ.get(_bi.str(key), default))
+    def require(self, key):
+        v = _os.environ.get(_bi.str(key))
+        if v is None:
+            return _Err(f"Required env var '{key}' not set")
+        return _Ok(v)
+env = _EnvMod()
+
+class _JsonMod:
+    def parse(self, s):
+        try:
+            return _Ok(_json.loads(_bi.str(s)))
+        except Exception as e:
+            return _Err(f"JSON parse error: {e}")
+    def stringify(self, obj, indent=None):
+        try:
+            return _Ok(_json.dumps(obj, indent=indent, default=_bi.str))
+        except Exception as e:
+            return _Err(f"JSON stringify error: {e}")
+    def pretty(self, obj):
+        return self.stringify(obj, indent=2)
+json = _JsonMod()
+
+class _MathMod:
+    def abs(self, x): return _bi.abs(_bi.float(x))
+    def ceil(self, x): return _math.ceil(_bi.float(x))
+    def floor(self, x): return _math.floor(_bi.float(x))
+    def round(self, x): return _bi.round(_bi.float(x))
+    def sqrt(self, x): return _math.sqrt(_bi.float(x))
+    def pow(self, x, y): return _bi.float(x) ** _bi.float(y)
+    def min(self, *args): return _bi.min([_bi.float(a) for a in args])
+    def max(self, *args): return _bi.max([_bi.float(a) for a in args])
+    def sin(self, x): return _math.sin(_bi.float(x))
+    def cos(self, x): return _math.cos(_bi.float(x))
+    def log(self, x): return _math.log(_bi.float(x))
+    def pi(self): return _math.pi
+    def e(self): return _math.e
+math = _MathMod()
+
+class _TimeMod:
+    def now(self): return _Ok(_time.time())
+    def sleep(self, ms):
+        _time.sleep(_bi.float(ms) / 1000.0)
+        return _Ok(None)
+    def fmt(self, ts=None, fmt_str="%Y-%m-%d %H:%M:%S"):
+        t = _datetime.datetime.fromtimestamp(_bi.float(ts)) if ts else _datetime.datetime.now()
+        return _Ok(t.strftime(_bi.str(fmt_str)))
+    def date(self):
+        d = _datetime.date.today()
+        return _Ok({"year": d.year, "month": d.month, "day": d.day})
+time = _TimeMod()
+
+class _StrMod:
+    def join(self, lst, sep=""):
+        return _Ok(_bi.str(sep).join(_bi.str(x) for x in lst))
+    def split(self, s, sep=" "):
+        return _Ok(_bi.str(s).split(_bi.str(sep)))
+    def replace(self, s, old, new):
+        return _Ok(_bi.str(s).replace(_bi.str(old), _bi.str(new)))
+    def contains(self, s, sub):
+        return _Ok(_bi.str(sub) in _bi.str(s))
+    def starts(self, s, prefix):
+        return _Ok(_bi.str(s).startswith(_bi.str(prefix)))
+    def ends(self, s, suffix):
+        return _Ok(_bi.str(s).endswith(_bi.str(suffix)))
+    def trim(self, s):
+        return _Ok(_bi.str(s).strip())
+    def repeat(self, s, n):
+        return _Ok(_bi.str(s) * _bi.int(n))
+str = _StrMod()
+
+class _CryptoMod:
+    def md5(self, s):
+        return _Ok(_hashlib.md5(_bi.str(s).encode()).hexdigest())
+    def sha256(self, s):
+        return _Ok(_hashlib.sha256(_bi.str(s).encode()).hexdigest())
+    def base64_encode(self, s):
+        return _Ok(_base64.b64encode(_bi.str(s).encode()).decode())
+    def base64_decode(self, s):
+        try:
+            return _Ok(_base64.b64decode(_bi.str(s)).decode())
+        except Exception as e:
+            return _Err(f"base64 decode error: {e}")
+    def uuid(self):
+        return _Ok(_bi.str(_uuid.uuid4()))
+crypto = _CryptoMod()
+
+class _DbMod:
+    def q(self, table, where=None):
+        _bi.print(f"[karn:db] Query: {table} WHERE {where}")
+        return _Ok([])
+    def exec(self, sql, *args):
+        _bi.print(f"[karn:db] Exec: {sql} args={args}")
+        return _Ok({"rows_affected": 0})
+db = _DbMod()
+
+def _kprint(*args):
+    _bi.print(*[_bi.str(a) for a in args])
+    return _Ok(None)
+print = _kprint
+def _safeint(x):
+    try: return _bi.int(x)
+    except Exception as e: return _Err(_bi.str(e))
+int = _safeint
+def _safefloat(x):
+    try: return _bi.float(x)
+    except Exception as e: return _Err(_bi.str(e))
+float = _safefloat
+def _safelen(x):
+    try: return _bi.len(x)
+    except Exception as e: return _Err(_bi.str(e))
+len = _safelen
+def _kkeys(x):
+    return _bi.list(x.keys()) if _bi.isinstance(x, _bi.dict) else []
+keys = _kkeys
+def _kvalues(x):
+    return _bi.list(x.values()) if _bi.isinstance(x, _bi.dict) else []
+values = _kvalues
+def _krange(s, e=None):
+    s = _bi.int(s)
+    if e is None: return _bi.list(_bi.range(s))
+    return _bi.list(_bi.range(s, _bi.int(e)))
+range = _krange
+def _ktypeof(x):
+    if _bi.isinstance(x, _Ok): return 'Ok'
+    if _bi.isinstance(x, _Err): return 'Err'
+    return _bi.type(x).__name__
+type_of = _ktypeof
+def _kzip(a, b):
+    return _bi.list(_bi.zip(a, b))
+zip = _kzip
+def _kreversed(x):
+    return _bi.list(_bi.reversed(x))
+reversed = _kreversed
 
 title = 'Built with KARN'
 tagline = "The Agent's Language"
 version = '1.0.0'
 html = (((((('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>' + title) + '</title>\n<style>\n  *{margin:0;padding:0;box-sizing:border-box}\n  body{\n    font-family:\'Segoe UI\',system-ui,-apple-system,sans-serif;\n    background:#05070a;color:#e8e6e3;\n    min-height:100vh;display:flex;flex-direction:column;\n    align-items:center;justify-content:center;\n    background-image:\n      radial-gradient(ellipse at 20% 50%,rgba(201,168,76,.06) 0%,transparent 50%),\n      radial-gradient(ellipse at 80% 50%,rgba(201,168,76,.04) 0%,transparent 50%);\n  }\n  .logo{font-size:72px;font-weight:800;letter-spacing:-2px;\n    background:linear-gradient(135deg,#c9a84c 0%,#f0d78c 50%,#c9a84c 100%);\n    -webkit-background-clip:text;-webkit-text-fill-color:transparent;\n    margin-bottom:8px}\n  .tagline{font-size:20px;color:#888;margin-bottom:40px;font-weight:300}\n  .cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center;max-width:800px}\n  .card{\n    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);\n    border-radius:12px;padding:24px;width:230px;text-align:center;\n    transition:border-color .3s}\n  .card:hover{border-color:rgba(201,168,76,.4)}\n  .card h3{color:#c9a84c;margin-bottom:8px;font-size:14px;text-transform:uppercase;letter-spacing:1px}\n  .card p{color:#999;font-size:13px;line-height:1.5}\n  .card .val{font-size:28px;font-weight:700;color:#e8e6e3;margin:8px 0}\n  .footer{margin-top:48px;color:#444;font-size:12px}\n  code{background:rgba(201,168,76,.1);padding:2px 8px;border-radius:4px;\n    font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#c9a84c}\n</style>\n</head>\n<body>\n<div class="logo">KARN</div>\n<div class="tagline">') + tagline) + '</div>\n<div class="cards">\n  <div class="card">\n    <h3>Version</h3>\n    <div class="val">') + version) + '</div>\n    <p>Interpreted, JIT, and compiled. Same source file.</p>\n  </div>\n  <div class="card">\n    <h3>Syntax</h3>\n    <div class="val">4x</div>\n    <p>Denser than Python. Every character carries meaning.</p>\n  </div>\n  <div class="card">\n    <h3>Targets</h3>\n    <div class="val">12+</div>\n    <p>Python, JS, Linux, macOS, WASM, iOS, Android, and more.</p>\n  </div>\n  <div class="card">\n    <h3>Interop</h3>\n    <div class="val">4</div>\n    <p>pip, npm, cargo, and system libs. One <code>from</code> line.</p>\n  </div>\n</div>\n<div class="footer">This page was generated and served by a KARN program.</div>\n</body>\n</html>')
-result = fs.write('site/index.html', html)
-log.info('HTML written to site/index.html')
+result = _getattr(fs, 'write')('site/index.html', html)
+_getattr(log, 'info')('HTML written to site/index.html')
 print('Website built! Open site/index.html in your browser.')

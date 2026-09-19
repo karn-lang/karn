@@ -12,8 +12,8 @@ AI agents are writing code in languages designed for humans. Python, TypeScript,
 
 **KARN delivers:**
 
-- **76% fewer tokens than Python** for equivalent logic
-- **3 codegen targets** — C (native binary), JavaScript (Node.js), Web (HTML), Python
+- **An estimated ~76% fewer tokens than Python** for equivalent logic (author estimate)
+- **4 codegen targets** — C (native binary), JavaScript (Node.js), Web (HTML), Python
 - **Error as value** — no exceptions, every I/O returns Ok|Err
 - **Full stdlib** — http, fs, log, env, json, math, time, str, crypto, db
 - **Ecosystem interop** — from pip, from npm, from cargo, from sys
@@ -48,12 +48,12 @@ node hello.js
 ## What's Built
 
 - **Interpreter**: Full tree-walk evaluator with REPL
-- **JIT Mode**: Profiles hot functions, compiles to native on-the-fly
+- **JIT Mode**: Profiles hot functions, compiles them to Python and execs on-the-fly (best-effort, with tree-walk fallback)
 - **C Codegen**: Outputs C source → gcc/clang → native binary
 - **JavaScript Codegen**: Outputs Node.js-compatible JS
 - **Web Codegen**: Outputs self-contained HTML
 - **Python Codegen**: Outputs portable Python 3
-- **91 tests** passing across lexer, parser, interpreter, codegen
+- **128 tests** passing across lexer, parser, interpreter, codegen
 
 ---
 

@@ -12,9 +12,9 @@
     "~": { "name": "mutate", "description": "Mutable bind", "example": "~count = 0" },
     "?": { "name": "propagate", "description": "Unwrap Ok, propagate Err up stack", "example": "data = http.get(url)?" },
     "??": { "name": "fallback", "description": "Use default value on Err", "example": "cache.get(k)??default" },
-    "&": { "name": "parallel", "description": "Concurrent execution, collect all results", "example": "a() & b() & c()" },
+    "&": { "name": "parallel", "description": "Run all branches, collect results into a list (sequential in the interpreter)", "example": "a() & b() & c()" },
     "|>": { "name": "pipe_forward", "description": "Sequential value passing between functions", "example": "auth.verify(tok) |> db.q()" },
-    "|~": { "name": "race", "description": "First success wins, others cancelled", "example": "primary()|~fallback()" },
+    "|~": { "name": "race", "description": "Try left; on error, fall back to right (sequential fallback)", "example": "primary()|~fallback()" },
     "*": { "name": "map", "description": "Transform each element of collection", "example": "items*(x->x*2)" },
     "%": { "name": "filter", "description": "Filter collection by predicate", "example": "items%(x->x>0)" },
     "..": { "name": "range", "description": "Inclusive range", "example": "1..100" },
@@ -170,7 +170,7 @@
   "cli": {
     "run": { "usage": "karn run <file.kn> [--jit]", "description": "Run a .kn file (interpreted or JIT)" },
     "build": { "usage": "karn build <file.kn> --target <target> [-o output]", "description": "Compile to specified target" },
-    "check": { "usage": "karn check <file.kn> [file.kn ...]", "description": "Parse and type-check without running" },
+    "check": { "usage": "karn check <file.kn> [file.kn ...]", "description": "Parse without running (syntax check; no type checking yet)" },
     "repl": { "usage": "karn repl", "description": "Start interactive REPL" }
   },
 

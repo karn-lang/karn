@@ -103,6 +103,56 @@ const char* _val_to_str(Val v){
     return "nil";
 }
 
+/* ── Structural equality (mirrors interpreter == semantics) ── */
+bool _val_eq(Val a, Val b){
+    if(a.type==VAL_STR && b.type==VAL_STR) return strcmp(a.as.str,b.as.str)==0;
+    if(a.type==VAL_NUM && b.type==VAL_NUM) return a.as.num==b.as.num;
+    if(a.type==VAL_BOOL && b.type==VAL_BOOL) return a.as.b==b.as.b;
+    if(a.type==VAL_NIL && b.type==VAL_NIL) return true;
+    if((a.type==VAL_NUM||a.type==VAL_BOOL) && (b.type==VAL_NUM||b.type==VAL_BOOL)){
+        double x=a.type==VAL_NUM?a.as.num:(a.as.b?1:0);
+        double y=b.type==VAL_NUM?b.as.num:(b.as.b?1:0);
+        return x==y;
+    }
+    if(a.type==VAL_OK && b.type==VAL_OK) return a.as.ok_val==b.as.ok_val;
+    if(a.type==VAL_ERR && b.type==VAL_ERR) return a.as.err_msg==b.as.err_msg;
+    if(a.type==VAL_ARR && b.type==VAL_ARR){
+        if(a.as.arr->len!=b.as.arr->len) return false;
+        for(int i=0;i<a.as.arr->len;i++)
+            if(!_val_eq(a.as.arr->items[i],b.as.arr->items[i])) return false;
+        return true;
+    }
+    if(a.type==VAL_MAP && b.type==VAL_MAP){
+        if(a.as.map->len!=b.as.map->len) return false;
+        for(int i=0;i<a.as.map->len;i++){
+            Val k=a.as.map->keys[i]; bool found=false; Val v=val_nil();
+            for(int j=0;j<b.as.map->len;j++){
+                if(_val_eq(k,b.as.map->keys[j])){ found=true; v=b.as.map->vals[j]; break; }
+            }
+            if(!found) return false;
+            if(!_val_eq(a.as.map->vals[i],v)) return false;
+        }
+        return true;
+    }
+    return false;
+}
+Val karn_eq(Val a, Val b){ return val_bool(_val_eq(a,b)); }
+
+/* ── Ordering: -1/0/1, *ok=0 when incomparable (mixed types).
+   The interpreter raises on mixed-type ordering; C Val-returning
+   codegen has no raise mechanism, so those yield false (documented). ── */
+int _val_cmp(Val a, Val b, int *ok){
+    *ok=1;
+    if(a.type==VAL_NUM && b.type==VAL_NUM){
+        if(a.as.num<b.as.num) return -1;
+        return (a.as.num>b.as.num)?1:0;
+    }
+    if(a.type==VAL_STR && b.type==VAL_STR) return strcmp(a.as.str,b.as.str);
+    if(a.type==VAL_BOOL && b.type==VAL_BOOL) return (a.as.b>b.as.b)-(a.as.b<b.as.b);
+    if(a.type==VAL_NIL && b.type==VAL_NIL) return 0;
+    *ok=0; return 0;
+}
+
 /* ── Error propagation ── */
 Val _prop(Val v){
     if(v.type==VAL_ERR){ val_println(v); exit(1); }
