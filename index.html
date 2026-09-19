@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KARN — The Agent's Language</title>
-<meta name="description" content="KARN is a token-minimal, platform-agnostic programming language built for AI agents. Interpreted, compiled, and JIT — one source, every platform.">
+<meta name="description" content="KARN is a token-minimal, platform-agnostic programming language built for AI agents. Designed for high token-efficiency (author estimates ~76% fewer than Python), deterministic semantics (Ok|Err), multi-platform native compilation (C/JS/Web/Python), JIT, and agent-first interoperability (pip/npm/cargo/sys). Keywords: agent-language, ai-agent-tools, token-efficient, code-generation, interpreter, compiler, AIO, LLM, cross-platform.">
 <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
 <script type="application/ld+json">
 {
@@ -18,7 +18,7 @@
   "url": "https://github.com/karn-lang/karn",
   "license": "https://opensource.org/licenses/MIT",
   "softwareVersion": "1.0.0",
-  "featureList": ["Token-minimal syntax", "Multi-platform compilation", "Error as value", "Async by default", "Ecosystem interop"],
+  "featureList": ["Token-minimal syntax", "Agent-first design (deterministic Ok|Err)", "Multi-platform native compilation (C/JS/Web/Python)", "JIT execution mode", "Full ecosystem interop (pip/npm/cargo/sys)", "Machine-readable spec (JSON)"],
   "audience": {
     "@type": "Audience",
     "audienceType": "AI Agents"
@@ -1000,19 +1000,19 @@ http.<span class="f">serve</span>(<span class="n">3000</span>, [<span class="s">
 
   <div class="stats-row">
     <div class="stat">
-      <div class="stat-num">4×</div>
-      <div class="stat-label">denser than Python</div>
+      <div class="stat-num">~4×</div>
+      <div class="stat-label">denser than Python (est.)</div>
     </div>
     <div class="stat">
-      <div class="stat-num">3</div>
-      <div class="stat-label">codegen targets (C, JS, Py)</div>
+      <div class="stat-num">4</div>
+      <div class="stat-label">codegen targets (C, JS, Web, Py)</div>
     </div>
     <div class="stat">
       <div class="stat-num">3</div>
       <div class="stat-label">execution modes</div>
     </div>
     <div class="stat">
-      <div class="stat-num">91</div>
+      <div class="stat-num">128</div>
       <div class="stat-label">tests passing</div>
     </div>
   </div>
@@ -1124,8 +1124,8 @@ http.<span class="f">serve</span>(<span class="n">3000</span>, [<span class="s">
         <pre><span class="c">-- parallel: & collects all results into a list</span>
 results <span class="k">=</span> taskA()<span class="k"> &amp; </span>taskB()<span class="k"> &amp; </span>taskC()
 
-<span class="c">-- sequential: |> passes value forward</span>
-auth.<span class="f">verify</span>(tok) <span class="k">|&gt;</span> db.<span class="f">q</span>(<span class="s">"users"</span>)
+<span class="c">-- sequential: |> passes value forward (bare function stage)</span>
+results <span class="k">=</span> auth.<span class="f">verify</span>(tok) <span class="k">|&gt;</span> getUser <span class="k">|&gt;</span> log.<span class="f">info</span>  <span class="c">(pipe stages are bare function references)</span>
 
 <span class="c">-- race: first to resolve wins</span>
 result <span class="k">=</span> primary()<span class="k">|~</span>fallback()

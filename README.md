@@ -1,6 +1,17 @@
 # KARN — The Agent's Language
 
-A token-minimal, platform-agnostic programming language built for AI agents.
+<!-- SEO / AEO / GEO / AIO badges -->
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue)
+![Status](https://img.shields.io/badge/status-v1.0-blue)
+![Tests: 128 passing](https://img.shields.io/badge/tests-128%20passing-brightgreen)
+![AI Agents](https://img.shields.io/badge/audience-ai_agents-orange)
+![Agent Docs](https://img.shields.io/badge/docs-agent_docs-cyan)
+
+A token-minimal, platform-agnostic programming language built for AI agents. Optimized for high token-efficiency, deterministic semantics, multi-platform code generation, and agent-driven workflows.
+
+**Estimated ~4x denser than Python · Interpreted, JIT, and AOT compiled · 4 codegen targets · Full ecosystem interop.**
 
 **Designed for ~4x the density of Python. 3 execution modes. 4 codegen targets. Every ecosystem.**
 
@@ -26,6 +37,23 @@ http.serve(3000, {"/users/:id": getUser})
 - **Full ecosystem access** — `from pip numpy`, `from npm react`, `from cargo serde`. One line.
 
 ## Quick Start
+
+### Keywords / Topics
+
+AI agent programming language · token-efficient compiler · code generation from .kn source · deterministic execution with `Ok|Err` result chains · multi-platform native binary output (C/JS/Web/Python) · agent-first design · LLM-optimized syntax · token economy · agent tools · AI code generation · cross-platform compiler · agent language specification · generative engine optimization · AI agent workflow automation
+
+### SEO / AIO / Metadata Summary
+
+- **Primary keywords**: `agent-language`, `token-efficient`, `code-generation`, `interpreter`, `compiler`, `LLM`, `AI-agent-tools`, `AIO`
+- **Secondary keywords**: `agent-workflows`, `cross-platform`, `token-minimal`, `code-generation-target`, `programming-language`
+- **Audience tag**: AI agents (primary), developers/researchers (secondary)
+- **Categories**: Compilers · Interpreters · Code Generators · Scientific / AI · Agent Tools
+- **Platform targets**: All (native binary C, JS Node, web HTML, portable Python)
+- **Performance estimates** (author): ~76% tokens vs Python, ~83% vs TypeScript, ~89% vs Rust; ~2.1 tok/LOC (author estimates vary)
+- **Execution modes**: interpreted (`karn run`), JIT (`run --jit`), compiled / AOT (`build --target`)
+- **Status**: v1.0.0, 128 passing tests, open-source MIT
+
+### Quick Start
 
 ### Install
 
